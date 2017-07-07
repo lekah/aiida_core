@@ -1,4 +1,4 @@
-from . import ChillstepCalculation
+from aiida.orm.calculation.chillstep import ChillstepCalculation
 from aiida.orm.data.parameter import ParameterData
 from aiida.orm import Data, load_node, Calculation
 #~ from aiida.orm.data.structure import StructureData
@@ -27,6 +27,11 @@ def concatenate_trajectory_inline(**kwargs):
             traj.set_array(arrname, sorted_trajectories[0].get_array(arrname))
         else:
             traj.set_array(arrname, np.concatenate([t.get_array(arrname) for t in sorted_trajectories]))
+    
+    
+    [traj._set_attr(k,v) for k,v in sorted_trajectories[0].get_attrs().items() if not k.startswith('array|')]
+    #~ for k in keys:
+
 
     return {'concatenated_trajectory':traj}
     
@@ -66,7 +71,7 @@ class MoldynCalculation(ChillstepCalculation):
         calc.set_max_wallclock_seconds(self.inputs.moldyn_parameters.dict.max_wallclock_seconds)
         self.ctx.lastcalc_uuid = calc.uuid
         self.goto(self.iterate)
-        return {'calc_{}'.format(str(self.ctx.iteration).rjust(len(self._MAX_ITERATIONS),0)):calc}
+        return {'calc_{}'.format(str(self.ctx.iteration).rjust(len(str(self._MAX_ITERATIONS)),str(0))):calc}
 
     
     def iterate(self):
@@ -74,7 +79,7 @@ class MoldynCalculation(ChillstepCalculation):
         Check if I have to run again. If not, I exit
         """
         lastcalc = load_node(self.ctx.lastcalc_uuid)
-        if lastcalc.get_state != calc_states.FINISHED:
+        if lastcalc.get_state() != calc_states.FINISHED:
             raise Exception("My last calculation {} did not finish".format(lastcalc))
         # get the steps I run
         nsteps_run_last_calc = get_completed_number_of_steps(lastcalc)
@@ -89,7 +94,7 @@ class MoldynCalculation(ChillstepCalculation):
             newcalc.use_parameters(ParameterData(dict=input_dict))
             self.goto(self.iterate)
             self.ctx.lastcalc_uuid = newcalc.uuid
-            return {'calc_{}'.format(str(self.ctx.iteration).rjust(len(self._MAX_ITERATIONS),0)):newcalc}
+            return {'calc_{}'.format(str(self.ctx.iteration).rjust(len(str(self._MAX_ITERATIONS)),str(0))):newcalc}
         else:
             self.goto(self.exit)# I finish
     def get_output_trajectory(self, store=False):

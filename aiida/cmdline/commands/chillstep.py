@@ -65,7 +65,7 @@ class Chillstep(VerdiCommandWithSubcommands):
         
         res = QueryBuilder().append(ChillstepCalculation).all()
         for chiller, in res:
-            print chiller.label, chiller.id, chiller.get_state()
+            print chiller.label, chiller.__class__.__name__, chiller.id, chiller.get_state()
         return
         parser = argparse.ArgumentParser(
             prog=self.get_full_command_name(),
