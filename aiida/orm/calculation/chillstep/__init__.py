@@ -1,6 +1,6 @@
 import traceback
 
-from aiida.orm import JobCalculation, Calculation,Data
+from aiida.orm import JobCalculation, Calculation,Data, Code
 from aiida.common.exceptions import InputValidationError, ModificationNotAllowed
 from abc import abstractmethod
 from aiida.backends.utils import get_automatic_user
@@ -126,8 +126,8 @@ class ChillstepCalculation(Calculation):
         # Everything that is input has to be Data
         super(ChillstepCalculation, self).__init__(dbnode=dbnode)
         for k, v in kwargs.items():
-            if not isinstance(v, Data):
-                raise InputValidationError("Input to a Chillstep has to be Data")
+            if not isinstance(v, (Code, Data)):
+                raise InputValidationError("Input to a Chillstep has to be Data or Code")
             # These are the inputs:
             self.add_link_from(v, label=k, link_type=LinkType.INPUT)
         self.ctx = Context(self)
@@ -225,10 +225,10 @@ def tick_chillstepper(cs, store):
                 v.store()
                 v.add_link_from(cs,  label=k, link_type=LinkType.CREATE)
             elif isinstance(v, Calculation):
-                v.store_all()
-                v.submit()
                 print v, v.get_state(), '@' 
                 v.add_link_from(cs,  label=k, link_type=LinkType.CALL)
+                v.store_all()
+                v.submit()
                 #~ if not isinstance(v, ChillstepCalculation):
                     #~ raise Exception ("You can only run when only Chillsteppers are involved")
                     #~ run(v)
@@ -238,7 +238,6 @@ def tick_chillstepper(cs, store):
     except Exception as e:
         msg = "ERROR ! This Chillstepper got an error for {} in the {} method, we report down the stack trace:\n{}".format(
                 cs, funcname,traceback.format_exc())
-
         cs._set_state(calc_states.FAILED)
         cs.add_comment(str(e), user=get_automatic_user())
         print msg

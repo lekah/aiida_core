@@ -37,6 +37,7 @@ from aiida.backends import settings as settings_profile
 from aiida.cmdline.commands.user import User
 import aiida.cmdline.commands.user as user
 from aiida.cmdline.commands.calculation import Calculation
+from aiida.cmdline.commands.chillstep import Chillstep
 from aiida.cmdline.commands.code import Code
 from aiida.cmdline.commands.computer import Computer
 from aiida.cmdline.commands.daemon import Daemon
