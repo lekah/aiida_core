@@ -62,8 +62,11 @@ class Chillstep(VerdiCommandWithSubcommands):
 
         from aiida.orm.querybuilder import QueryBuilder
         from aiida.orm.calculation.chillstep import ChillstepCalculation
+        qb = QueryBuilder()
+        qb.append(ChillstepCalculation)
+        qb.order_by({ChillstepCalculation:'id'})
+        res = qb.all()
         
-        res = QueryBuilder().append(ChillstepCalculation).all()
         for chiller, in res:
             print chiller.label, chiller.__class__.__name__, chiller.id, chiller.get_state()
         return
