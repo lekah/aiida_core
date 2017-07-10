@@ -1,6 +1,6 @@
 import traceback
 
-from aiida.orm import JobCalculation, Calculation,Data, Code
+from aiida.orm import JobCalculation, Calculation, Data, Code
 from aiida.common.exceptions import InputValidationError, ModificationNotAllowed
 from abc import abstractmethod
 from aiida.backends.utils import get_automatic_user
@@ -138,8 +138,13 @@ class ChillstepCalculation(Calculation):
     @property
     def inputs(self):
         return self.inp
+
     def goto(self, func):
         #~ self._set_attr('_next', func.__name__)
+        try:
+            self.ctx._last = self.ctx._next
+        except:
+            self.ctx._last = None
         self.ctx._next = func.__name__
     @abstractmethod
     def start(self):
@@ -202,10 +207,11 @@ def run(cs, store=False):
             break
 
 
-def tick_chillstepper(cs, store):
+def tick_chillstepper(cs, dry_run=False):
 
+    last_funcname = cs.get_attr('_last', None)
     funcname = cs.get_attr('_next')
-    print 1, funcname
+    print '@{} {}  {} -> {}'.format(cs.__class__.__name__, cs.pk, last_funcname, funcname)
     if funcname == 'exit':
         cs._set_state(calc_states.FINISHED)
         return True
@@ -222,37 +228,33 @@ def tick_chillstepper(cs, store):
             return False
         for k, v in returned.items():
             if isinstance(v, Data):
-                v.store()
-                v.add_link_from(cs,  label=k, link_type=LinkType.CREATE)
+                assert v.is_stored, "Received unstored Data instance"
+                v.add_link_from(cs,  label=k, link_type=LinkType.RETURN)
             elif isinstance(v, Calculation):
-                print v, v.get_state(), '@' 
                 v.add_link_from(cs,  label=k, link_type=LinkType.CALL)
-                v.store_all()
-                v.submit()
-                #~ if not isinstance(v, ChillstepCalculation):
-                    #~ raise Exception ("You can only run when only Chillsteppers are involved")
-                    #~ run(v)
-                
+                if isinstance(v, (JobCalculation, ChillstepCalculation)):
+                    v.store_all()
+                    v.submit()
             else:
                 raise Exception("Unspecified type {}".format(type(v)))
     except Exception as e:
         msg = "ERROR ! This Chillstepper got an error for {} in the {} method, we report down the stack trace:\n{}".format(
                 cs, funcname,traceback.format_exc())
+        print msg
+        if dry_run:
+            raise e
         cs._set_state(calc_states.FAILED)
         cs.add_comment(str(e), user=get_automatic_user())
-        print msg
         return True
-    
 
 
 
-def tick_all():
+def tick_all(dry_run=False):
     qb = QueryBuilder()
     qb.append(ChillstepCalculation, filters={'state':calc_states.WITHSCHEDULER})
     print qb.count()
     for chillstepcalc, in qb.all():
-        print "dealing with", chillstepcalc, chillstepcalc.get_attr('_next'),'...'
-        tick_chillstepper(chillstepcalc, store=True)
+        tick_chillstepper(chillstepcalc, dry_run=dry_run)
 
 
 
