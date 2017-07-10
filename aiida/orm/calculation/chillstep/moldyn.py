@@ -42,6 +42,9 @@ def get_completed_number_of_steps(calc):
     except AttributeError:
         nstep = calc.out.output_trajectory.get_attr('array|positions.0')
     return nstep
+
+
+
 class MoldynCalculation(ChillstepCalculation):
     """
     Run a Molecular Dynamics calculations
@@ -97,6 +100,19 @@ class MoldynCalculation(ChillstepCalculation):
             return {'calc_{}'.format(str(self.ctx.iteration).rjust(len(str(self._MAX_ITERATIONS)),str(0))):newcalc}
         else:
             self.goto(self.exit)# I finish
+
+
+    def get_slave_calculations(self):
+        """
+        Returns a list of the calculations that was called by the WF, ordered.
+        """
+        qb = QueryBuilder()
+        qb.append(MoldynCalculation, filters={'id':self.id}, tag='m')
+        qb.append(Calculation, output_of='m', edge_project='label', edge_filters={'type':LinkType.CALL.value, 'label':{'like':'calc_%'}}, tag='c', edge_tag='mc', project='*')
+        d = {item['mc']['label']:item['c']['*'] for item in qb.iterdict()}
+        sorted_calcs = sorted(d.items())
+        return zip(*sorted_calcs)[1]
+
     def get_output_trajectory(self, store=False):
         # I don't even have to be finished,  for this
         qb = QueryBuilder()

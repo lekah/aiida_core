@@ -238,7 +238,7 @@ def tick_chillstepper(cs, store):
     except Exception as e:
         msg = "ERROR ! This Chillstepper got an error for {} in the {} method, we report down the stack trace:\n{}".format(
                 cs, funcname,traceback.format_exc())
-        #~ cs._set_state(calc_states.FAILED)
+        cs._set_state(calc_states.FAILED)
         cs.add_comment(str(e), user=get_automatic_user())
         print msg
         return True

@@ -62,9 +62,15 @@ class BranchingCalculation(ChillstepCalculation):
         # Get the parameters
         self.ctx.nr_of_branches = self.inputs.parameters_branching.dict.nr_of_branches
         self.goto(self.thermalize)
+        assert self.inp.parameters_NVT.dict['IONS']['ion_velocities'] == 'from_input'
+        assert self.inp.parameters_NVE.dict['IONS']['ion_velocities'] == 'from_input'
 
 
     def thermalize(self):
+        """
+        Thermalize a run! This is the first set of calculations, I thermalize with the criterion
+        being the number of steps set in moldyn_parameters_thermalize.dict.nstep
+        """
         # all the settings are the same for thermalization, NVE and NVT
         inp_d = {k:v for k,v in self.get_inputs_dict().items() if not 'parameters_' in k}
         inp_d['moldyn_parameters'] = self.inp.moldyn_parameters_thermalize
@@ -73,9 +79,34 @@ class BranchingCalculation(ChillstepCalculation):
         return {'thermalizer':MoldynCalculation(**inp_d)}
 
     def run_NVT(self):
+        """
+        Here I restart from the the thermalized run! I run NVT until I have reached the
+        number of steps specified in self.inp.moldyn_parameters_NVT.dict.nstep
+        """
         inp_d = {k:v for k,v in self.get_inputs_dict().items() if not 'parameters_' in k}
         inp_d['moldyn_parameters'] = self.inp.moldyn_parameters_NVT
         inp_d['parameters'] = self.inp.parameters_NVT
+        
+
+        traj = self.out.thermalizer.get_output_trajectory(store=True)
+
+        try:
+            settings = self.inp.settings
+        except:
+            settings = ParameterData().store()
+        slaves = {}
+        res = get_structure_from_trajectory_for_pinball_inline(
+                structure=self.inp.structure, trajectory=traj,
+                settings=settings,
+                parameters=ParameterData(dict=dict(
+                        step_index=-1,
+                        pos_units=traj.get_attr('units|positions'),
+                        vel_units=traj.get_attr('units|velocities'),
+                        recenter=True
+            )), store=True)
+        inp_d['settings']=res['settings']
+        inp_d['structure']=res['structure']
+
         self.goto(self.run_NVE)
         return {'slave_NVT':MoldynCalculation(**inp_d)}
 
@@ -106,8 +137,8 @@ class BranchingCalculation(ChillstepCalculation):
                             vel_units=traj.get_attr('units|velocities'),
                             recenter=True
                     )), store=True)
-            settings=res['settings']
-            structure=res['structure']
+            inp_d['settings']=res['settings']
+            inp_d['structure']=res['structure']
             slaves['slave_NVE_{}'.format(str(count).rjust(len(str(len(indices))),str(0)))] = MoldynCalculation(**inp_d)
         self.goto(self.exit)
         return slaves
