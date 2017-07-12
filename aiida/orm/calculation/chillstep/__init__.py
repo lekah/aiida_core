@@ -119,7 +119,7 @@ class Context(object):
         return self._node.get_attr(name)
     def __delattr__(self, name):
         self._node._del_attr(name)
-    
+
 class ChillstepCalculation(Calculation):
 
     def __init__(self, dbnode=None, **kwargs):
@@ -176,7 +176,7 @@ class ChillstepCalculation(Calculation):
             return get_state_sqla(self)
         else:
             raise Exception("unknown backend {}".format(settings.BACKEND))
-        
+
     def _linking_as_output(self, dest, link_type):
         """
         :note: Further checks, such as that the output data type is 'Data',
@@ -209,34 +209,42 @@ def run(cs, store=False):
 
 def tick_chillstepper(cs, dry_run=False):
 
-    last_funcname = cs.get_attr('_last', None)
-    funcname = cs.get_attr('_next')
-    print '@{} {}  {} -> {}'.format(cs.__class__.__name__, cs.pk, last_funcname, funcname)
-    if funcname == 'exit':
-        cs._set_state(calc_states.FINISHED)
-        return True
     try:
-        waiting = QueryBuilder().append(
-                ChillstepCalculation, filters={'id':cs.id},tag='parent').append(
-                Calculation, filters={'state':{'!in':['FINISHED', 'FAILED']}}, output_of='parent',
-                ).count() > 0
+        last_funcname = cs.get_attr('_last', None)
+        funcname = cs.get_attr('_next')
+        print '@{} {}  ( {} )'.format(cs.__class__.__name__, cs.pk, last_funcname)
 
-        if waiting:
-            return False
-        returned = getattr(cs, funcname)()
-        if returned is None:
-            return False
-        for k, v in returned.items():
-            if isinstance(v, Data):
-                assert v.is_stored, "Received unstored Data instance"
-                v.add_link_from(cs,  label=k, link_type=LinkType.RETURN)
-            elif isinstance(v, Calculation):
-                v.add_link_from(cs,  label=k, link_type=LinkType.CALL)
-                if isinstance(v, (JobCalculation, ChillstepCalculation)):
-                    v.store_all()
-                    v.submit()
+        waiting_for_pks = QueryBuilder().append(
+                ChillstepCalculation, filters={'id':cs.id},tag='parent').append(
+                Calculation, filters={'state':{'!in':['FINISHED', 'FAILED']}}, output_of='parent', project='id'
+            ).all()
+        if len(waiting_for_pks):
+            print "   Waiting for:", ' '.join(map(str, zip(*waiting_for_pks)[0]))
+        else:
+            # What's next to do?
+            if funcname == 'exit':
+                print "   FINISHED"
+                cs._set_state(calc_states.FINISHED)
             else:
-                raise Exception("Unspecified type {}".format(type(v)))
+                print "   Reaching next step ( {} )".format(funcname)
+
+                returned = getattr(cs, funcname)()
+                if returned is None:
+                    return False
+                for k, v in returned.items():
+
+                    if isinstance(v, Data):
+                        print "      Adding {} as returned ( {} )".format(v, k)
+                        assert v.is_stored, "Received unstored Data instance"
+                        v.add_link_from(cs,  label=k, link_type=LinkType.RETURN)
+                    elif isinstance(v, Calculation):
+                        v.add_link_from(cs,  label=k, link_type=LinkType.CALL)
+                        if isinstance(v, (JobCalculation, ChillstepCalculation)):
+                            v.store_all()
+                            v.submit()
+                        print "      Adding {} as called ( {} )".format(v, k)
+                    else:
+                        raise Exception("Unspecified type {}".format(type(v)))
     except Exception as e:
         msg = "ERROR ! This Chillstepper got an error for {} in the {} method, we report down the stack trace:\n{}".format(
                 cs, funcname,traceback.format_exc())
@@ -245,7 +253,6 @@ def tick_chillstepper(cs, dry_run=False):
             raise e
         cs._set_state(calc_states.FAILED)
         cs.add_comment(str(e), user=get_automatic_user())
-        return True
 
 
 
