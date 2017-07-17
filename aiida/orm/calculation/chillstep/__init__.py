@@ -177,6 +177,16 @@ class ChillstepCalculation(Calculation):
         else:
             raise Exception("unknown backend {}".format(settings.BACKEND))
 
+
+    def get_scheduler_state(self):
+        return "RUNNING"
+
+    def get_scheduler_output(self):
+        return None
+
+    def get_scheduler_error(self):
+        return None
+
     def _linking_as_output(self, dest, link_type):
         """
         :note: Further checks, such as that the output data type is 'Data',
