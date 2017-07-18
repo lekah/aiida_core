@@ -9,7 +9,7 @@
 ###########################################################################
 import os
 import sys
-
+import argparse
 from aiida.backends.utils import load_dbenv, is_dbenv_loaded
 from aiida.cmdline import delayed_load_node as load_node
 from aiida.cmdline.baseclass import VerdiCommandWithSubcommands
@@ -36,6 +36,7 @@ class Chillstep(VerdiCommandWithSubcommands):
         self.valid_subcommands = {
             #~ 'gotocomputer': (self.calculation_gotocomputer, self.complete_none),
             'list': (self.chillstep_list, self.complete_none),
+            'pause': (self.pause, self.complete_none),
             #~ 'logshow': (self.calculation_logshow, self.complete_none),
             #~ 'kill': (self.calculation_kill, self.complete_none),
             #~ 'inputls': (self.calculation_inputls, self.complete_none),
@@ -148,4 +149,24 @@ class Chillstep(VerdiCommandWithSubcommands):
             limit=parsed_args.limit,
             projections=parsed_args.project,
         )
+    def pause(self, *args):
+        if not is_dbenv_loaded():
+            load_dbenv()
 
+
+        from aiida.orm.querybuilder import QueryBuilder
+        from aiida.orm.calculation.chillstep import ChillstepCalculation
+        parser = argparse.ArgumentParser(
+            prog=self.get_full_command_name(),
+            description='Pause a chillstep calculations.')
+        # The default states are those that are shown if no option is given
+        parser.add_argument('pks', type=int, nargs='+',help="a list of chillsteps to pause")
+        args = list(args)
+        parsed_args = parser.parse_args(args)
+        qb = QueryBuilder().append(ChillstepCalculation, filters={'id':{'in':parsed_args.pks}})
+        if qb.count():
+            for cs, in qb.all():
+                print "Pausing", cs, "and all the slaves"
+                cs.pause()
+        else:
+            print "No chillstep calculations corresponding to the given pks"
