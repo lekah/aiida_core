@@ -63,13 +63,46 @@ class Chillstep(VerdiCommandWithSubcommands):
 
         from aiida.orm.querybuilder import QueryBuilder
         from aiida.orm.calculation.chillstep import ChillstepCalculation
+
+        parser = argparse.ArgumentParser(
+            prog=self.get_full_command_name(),
+            description='List chillstep calculations.')
+
+        parser.add_argument('-s', '--states', nargs='+', type=str,
+                            help="show only the AiiDA calculations with given state",
+                            default=[calc_states.WITHSCHEDULER])
+
+        parser.add_argument('-p', '--past-days', metavar='N',
+                            help="add a filter to show only calculations created in the past N days",
+                            action='store', type=int)
+        parser.add_argument('pks', type=int, nargs='*',
+                            help="a list of calculations to show. If empty, all running calculations are shown. If non-empty, ignores the -p and -r options.")
+        parser.add_argument('-a', '--all-states',
+                            dest='all_states', action='store_true',
+                            help="Overwrite manual set of states if present, and look for calculations in every possible state")
+        parser.set_defaults(all_states=False)
+
+        args = list(args)
+        parsed_args = parser.parse_args(args)
+
         qb = QueryBuilder()
-        qb.append(ChillstepCalculation)
-        qb.order_by({ChillstepCalculation:'id'})
+        qb.append(ChillstepCalculation, tag='calc')
+        if args.pks:
+            qb.add_filter({'calc':{'id':{'in':args.pks}}})
+        else:
+            if args.all_states:
+                pass
+            else:
+                qb.add_filter('calc':{'state':{'in':args.states}})
+            if args.past_days:
+                qb.add_filter('calc':{'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=args.past_days)
+
+        qb.order_by({'calc':'id'})
+    
         res = qb.all()
         
         for chiller, in res:
-            print chiller.label, chiller.__class__.__name__, chiller.id, chiller.get_state()
+            print chiller.id, chiller.get_state(), chiller.__class__.__name__,  chiller.label
         return
         parser = argparse.ArgumentParser(
             prog=self.get_full_command_name(),
