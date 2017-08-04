@@ -59,6 +59,7 @@ class Chillstep(VerdiCommandWithSubcommands):
 
         if not is_dbenv_loaded():
             load_dbenv()
+        import datetime
 
 
         from aiida.orm.querybuilder import QueryBuilder
@@ -93,9 +94,9 @@ class Chillstep(VerdiCommandWithSubcommands):
             if args.all_states:
                 pass
             else:
-                qb.add_filter('calc':{'state':{'in':args.states}})
+                qb.add_filter({'calc':{'state':{'in':args.states}}})
             if args.past_days:
-                qb.add_filter('calc':{'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=args.past_days)
+                qb.add_filter({'calc':{'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=args.past_days)}}})
 
         qb.order_by({'calc':'id'})
     
