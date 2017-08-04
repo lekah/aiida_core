@@ -88,15 +88,15 @@ class Chillstep(VerdiCommandWithSubcommands):
 
         qb = QueryBuilder()
         qb.append(ChillstepCalculation, tag='calc')
-        if args.pks:
-            qb.add_filter({'calc':{'id':{'in':args.pks}}})
+        if parsed_args.pks:
+            qb.add_filter({'calc':{'id':{'in':parsed_args.pks}}})
         else:
-            if args.all_states:
+            if parsed_args.all_states:
                 pass
             else:
-                qb.add_filter({'calc':{'state':{'in':args.states}}})
+                qb.add_filter({'calc':{'state':{'in':parsed_args.states}}})
             if args.past_days:
-                qb.add_filter({'calc':{'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=args.past_days)}}})
+                qb.add_filter({'calc':{'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=parsed_args.past_days)}}})
 
         qb.order_by({'calc':'id'})
     
