@@ -1,5 +1,5 @@
 import traceback
-
+import numpy as np
 from aiida.orm import JobCalculation, Calculation, Data, Code
 from aiida.common.exceptions import InputValidationError, ModificationNotAllowed
 from abc import abstractmethod
@@ -245,6 +245,15 @@ def tick_chillstepper(cs, dry_run=False):
         if cs.get_attr(PAUSE_ATTRIBUTE_KEY, False):
             print "    is paused"
             return
+        backoff_counter = cs.get_attr('backoff_counter', 0)
+        if backoff_counter > 0:
+            print "    Backoff counter is {}".format(backoff_counter)
+            if np.random.random() < 0.5**backoff_counter:
+                print "    I will try to rerun"
+            else:
+                print "    Has to wait due to backoff"
+                return
+
         waiting_for_pks = cs.get_running_slaves(projections=['id'])
         if len(waiting_for_pks):
             print "   Waiting for:", ' '.join(map(str, waiting_for_pks))
