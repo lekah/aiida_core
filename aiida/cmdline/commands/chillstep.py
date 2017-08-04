@@ -64,7 +64,7 @@ class Chillstep(VerdiCommandWithSubcommands):
 
         from aiida.orm.querybuilder import QueryBuilder
         from aiida.orm.calculation.chillstep import ChillstepCalculation
-
+        from aiida.common.datastructures import calc_states
         parser = argparse.ArgumentParser(
             prog=self.get_full_command_name(),
             description='List chillstep calculations.')
