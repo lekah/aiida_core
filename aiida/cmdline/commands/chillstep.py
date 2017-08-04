@@ -95,7 +95,7 @@ class Chillstep(VerdiCommandWithSubcommands):
                 pass
             else:
                 qb.add_filter('calc', {'state':{'in':parsed_args.states}})
-            if args.past_days:
+            if parsed_args.past_days:
                 qb.add_filter('calc', {'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=parsed_args.past_days)}})
 
         qb.order_by({'calc':'id'})
