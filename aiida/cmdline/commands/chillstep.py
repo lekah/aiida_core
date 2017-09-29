@@ -9,7 +9,7 @@
 ###########################################################################
 import os
 import sys
-
+import argparse
 from aiida.backends.utils import load_dbenv, is_dbenv_loaded
 from aiida.cmdline import delayed_load_node as load_node
 from aiida.cmdline.baseclass import VerdiCommandWithSubcommands
@@ -36,6 +36,7 @@ class Chillstep(VerdiCommandWithSubcommands):
         self.valid_subcommands = {
             #~ 'gotocomputer': (self.calculation_gotocomputer, self.complete_none),
             'list': (self.chillstep_list, self.complete_none),
+            'pause': (self.pause, self.complete_none),
             #~ 'logshow': (self.calculation_logshow, self.complete_none),
             #~ 'kill': (self.calculation_kill, self.complete_none),
             #~ 'inputls': (self.calculation_inputls, self.complete_none),
@@ -58,17 +59,51 @@ class Chillstep(VerdiCommandWithSubcommands):
 
         if not is_dbenv_loaded():
             load_dbenv()
+        import datetime
 
 
         from aiida.orm.querybuilder import QueryBuilder
         from aiida.orm.calculation.chillstep import ChillstepCalculation
+        from aiida.common.datastructures import calc_states
+        parser = argparse.ArgumentParser(
+            prog=self.get_full_command_name(),
+            description='List chillstep calculations.')
+
+        parser.add_argument('-s', '--states', nargs='+', type=str,
+                            help="show only the AiiDA calculations with given state",
+                            default=[calc_states.WITHSCHEDULER])
+
+        parser.add_argument('-p', '--past-days', metavar='N',
+                            help="add a filter to show only calculations created in the past N days",
+                            action='store', type=int)
+        parser.add_argument('pks', type=int, nargs='*',
+                            help="a list of calculations to show. If empty, all running calculations are shown. If non-empty, ignores the -p and -r options.")
+        parser.add_argument('-a', '--all-states',
+                            dest='all_states', action='store_true',
+                            help="Overwrite manual set of states if present, and look for calculations in every possible state")
+        parser.set_defaults(all_states=False)
+
+        args = list(args)
+        parsed_args = parser.parse_args(args)
+
         qb = QueryBuilder()
-        qb.append(ChillstepCalculation)
-        qb.order_by({ChillstepCalculation:'id'})
+        qb.append(ChillstepCalculation, tag='calc')
+        if parsed_args.pks:
+            qb.add_filter('calc',{'id':{'in':parsed_args.pks}})
+        else:
+            if parsed_args.all_states:
+                pass
+            else:
+                qb.add_filter('calc', {'state':{'in':parsed_args.states}})
+            if parsed_args.past_days:
+                qb.add_filter('calc', {'ctime':{'>':datetime.datetime.now()-datetime.timedelta(days=parsed_args.past_days)}})
+
+        qb.order_by({'calc':'id'})
+    
         res = qb.all()
         
         for chiller, in res:
-            print chiller.label, chiller.__class__.__name__, chiller.id, chiller.get_state()
+            print chiller.id, chiller.get_state(), chiller.__class__.__name__,  chiller.label
         return
         parser = argparse.ArgumentParser(
             prog=self.get_full_command_name(),
@@ -148,4 +183,24 @@ class Chillstep(VerdiCommandWithSubcommands):
             limit=parsed_args.limit,
             projections=parsed_args.project,
         )
+    def pause(self, *args):
+        if not is_dbenv_loaded():
+            load_dbenv()
 
+
+        from aiida.orm.querybuilder import QueryBuilder
+        from aiida.orm.calculation.chillstep import ChillstepCalculation
+        parser = argparse.ArgumentParser(
+            prog=self.get_full_command_name(),
+            description='Pause a chillstep calculations.')
+        # The default states are those that are shown if no option is given
+        parser.add_argument('pks', type=int, nargs='+',help="a list of chillsteps to pause")
+        args = list(args)
+        parsed_args = parser.parse_args(args)
+        qb = QueryBuilder().append(ChillstepCalculation, filters={'id':{'in':parsed_args.pks}})
+        if qb.count():
+            for cs, in qb.all():
+                print "Pausing", cs, "and all the slaves"
+                cs.pause()
+        else:
+            print "No chillstep calculations corresponding to the given pks"

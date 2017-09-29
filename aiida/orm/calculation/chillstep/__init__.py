@@ -1,5 +1,5 @@
 import traceback
-
+import numpy as np
 from aiida.orm import JobCalculation, Calculation, Data, Code
 from aiida.common.exceptions import InputValidationError, ModificationNotAllowed
 from abc import abstractmethod
@@ -11,6 +11,8 @@ from aiida.backends.utils import BACKEND_DJANGO, BACKEND_SQLA
 from aiida.common.links import LinkType
 
 
+PAUSE_ATTRIBUTE_KEY = '_PAUSED'
+PAUSED_STATE = 'PAUSED'
 
 def _set_state_dj(self, state):
     """
@@ -170,12 +172,24 @@ class ChillstepCalculation(Calculation):
         else:
             raise Exception("unknown backend {}".format(settings.BACKEND))
     def get_state(self):
+        if self.get_attr(PAUSE_ATTRIBUTE_KEY, False):
+            return PAUSED_STATE
         if settings.BACKEND == BACKEND_DJANGO:
             return get_state_dj(self)
         elif settings.BACKEND == BACKEND_SQLA:
             return get_state_sqla(self)
         else:
             raise Exception("unknown backend {}".format(settings.BACKEND))
+
+
+    def get_scheduler_state(self):
+        return "RUNNING"
+
+    def get_scheduler_output(self):
+        return None
+
+    def get_scheduler_error(self):
+        return None
 
     def _linking_as_output(self, dest, link_type):
         """
@@ -198,6 +212,21 @@ class ChillstepCalculation(Calculation):
 
         return super(Calculation, self)._linking_as_output(dest, link_type)
 
+    def pause(self):
+        to_pause = self.get_running_slaves() + [self]
+        for cs in to_pause:
+            prev_state = cs.get_state()
+            if prev_state == PAUSED_STATE:
+                print "  ", cs, "was already paused"
+            else:
+                print "   Pausing", cs, "(previous state was {})".format(prev_state)
+                cs._set_attr(PAUSE_ATTRIBUTE_KEY, True)
+
+    def get_running_slaves(self, projections=['*']):
+        return [_ for _,  in QueryBuilder().append(
+                ChillstepCalculation, filters={'id':self.id},tag='parent').append(
+                Calculation, filters={'state':{'!in':['FINISHED', 'FAILED']}}, output_of='parent', project=projections, 
+            ).all()]
 
 
 def run(cs, store=False):
@@ -213,13 +242,21 @@ def tick_chillstepper(cs, dry_run=False):
         last_funcname = cs.get_attr('_last', None)
         funcname = cs.get_attr('_next')
         print '@{} {}  ( {} )'.format(cs.__class__.__name__, cs.pk, last_funcname)
+        if cs.get_attr(PAUSE_ATTRIBUTE_KEY, False):
+            print "    is paused"
+            return
+        backoff_counter = cs.get_attr('backoff_counter', 0)
+        if backoff_counter > 0:
+            print "    Backoff counter is {}".format(backoff_counter)
+            if np.random.random() < 0.5**backoff_counter:
+                print "    I will try to rerun"
+            else:
+                print "    Has to wait due to backoff"
+                return
 
-        waiting_for_pks = QueryBuilder().append(
-                ChillstepCalculation, filters={'id':cs.id},tag='parent').append(
-                Calculation, filters={'state':{'!in':['FINISHED', 'FAILED']}}, output_of='parent', project='id'
-            ).all()
+        waiting_for_pks = cs.get_running_slaves(projections=['id'])
         if len(waiting_for_pks):
-            print "   Waiting for:", ' '.join(map(str, zip(*waiting_for_pks)[0]))
+            print "   Waiting for:", ' '.join(map(str, waiting_for_pks))
         else:
             # What's next to do?
             if funcname == 'exit':
