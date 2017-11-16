@@ -9,6 +9,7 @@
 ###########################################################################
 import os, tempfile
 
+
 def draw_graph(origin_node, ancestor_depth=None, descendant_depth=None, format='dot',
         include_calculation_inputs=False, include_calculation_outputs=False):
     """

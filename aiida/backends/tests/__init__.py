@@ -44,6 +44,7 @@ db_test_list = {
         'query': ['aiida.backends.tests.query'],
         'workflows': ['aiida.backends.tests.workflows'],
         'calculation_node': ['aiida.backends.tests.calculation_node'],
+        'graph_explore': ['aiida.backends.tests.graph_explore'],
         'backup_script': ['aiida.backends.tests.backup_script'],
         'backup_setup_script': ['aiida.backends.tests.backup_setup_script'],
         'restapi': ['aiida.backends.tests.restapi'],
