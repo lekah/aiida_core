@@ -41,8 +41,29 @@ class TestGraphExplorer(AiidaTestCase):
         for valid_match in ('N=N<-n', 'N+=n', 'B-=B--g'):
             match = RULE_REGEX.search(valid_match)
             self.assertTrue(match is not None)
-        for non_valid_match in ('N=N<n', 'N+n', 'B-=B-g',
-                ' N+=n', 'N+=n ', # start, end with space
+        for non_valid_match in ('N=N<n', 'N+n', 'B-=B-g', # not valid because of missing oprerators
+                ' N+=n', 'N+=n ', # start or end with space
             ):
             match = RULE_REGEX.search(non_valid_match)
             self.assertTrue(match is None)
+
+
+    def test_simple_node_relationship(self):
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule
+        from aiida.orm.node import Node
+        n1,n2,n3 = self._setup_nodes_simple_1()
+        s =  AiidaEntitiesCollection()
+        s.nodes.add(n2)
+        # A rule to only get the nodes that have input!
+        self.assertEqual(Rule.get_from_string('N=N<-n').apply(s.copy()).nodes.set, set([n2.pk]))
+        # A rule that assignes the outputs of N to N
+        self.assertEqual(Rule.get_from_string('N=n<-N').apply(s.copy()).nodes.set, set([n3.pk]))
+        # A rule that assignes the inputs of N to N
+        self.assertEqual(Rule.get_from_string('N=n->N').apply(s.copy()).nodes.set, set([n1.pk]))
+        # A rule that updates N with the inputs of N
+        self.assertEqual(Rule.get_from_string('N+=n->N').apply(s.copy()).nodes.set, set([n1.pk, n2.pk]))
+        # A rule that removes N with inputs from N
+        s =  AiidaEntitiesCollection()
+        s.nodes.add(n1, n2)
+        self.assertEqual(Rule.get_from_string('N-=N<-n').apply(s.copy()).nodes.set, set([n1.pk]))
+
