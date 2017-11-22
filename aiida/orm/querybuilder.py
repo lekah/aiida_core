@@ -370,7 +370,7 @@ class QueryBuilder(object):
                     "".format(cls, type)
                 )
 
-        if not (cls or type):
+        if cls is None and type is None:
             raise InputValidationError(
                     "\n\n"
                     "You need to specify either a class or a type"
@@ -2007,6 +2007,11 @@ class QueryBuilder(object):
         self._query = self.get_query().distinct()
         return self
 
+    def copy(self):
+        """
+        :returns: A QueryBuilder instance that is a copy of myself.
+        """
+        return QueryBuilder(**self.get_json_compatible_queryhelp())
 
     def first(self):
         """
