@@ -43,6 +43,8 @@ def _setup_nodes_simple_2():
     n4.add_link_from(n1, link_type=LinkType.INPUT)
     return (n1, n2, n3, n4)
 
+
+@unittest.skipIf(True,"")
 class TestRule(AiidaTestCase):
 
 
@@ -205,7 +207,7 @@ class TestRule(AiidaTestCase):
         self.assertEqual(Rule.get_from_string('N=n--U').apply(s.copy()).nodes.get_keys(), set([n4.pk]))
         self.assertEqual(Rule.get_from_string('U=u--N').apply(s.copy()).users.get_keys(), set([automatic_user.id]))
 
-#~ @unittest.skipIf(True, "")
+@unittest.skipIf(True, "")
 class TestRuleSequence(AiidaTestCase):
 
     def test_rule_sequence_simple(self):
@@ -295,3 +297,19 @@ class TestRuleSequence(AiidaTestCase):
         self.assertEqual(RuleSequence(r, niter=2).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
         self.assertEqual(RuleSequence(r, niter=3).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
         self.assertEqual(RuleSequence(r, niter=4).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
+
+
+class TestStashCommit(AiidaTestCase):
+    def test_stash(self):
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence, StashCommit, StashPop
+        n1,n2,n3,n4 = _setup_nodes_simple_2()
+        print
+        print [n.pk for n in (n1,n2,n3,n4)]
+        # Rule to update with outputs
+        rout = Rule.get_from_string('N+=n<<N')
+        # Rule to update with inputs
+        rinp = Rule.get_from_string('N+=n>>N')
+        s =  AiidaEntitiesCollection()
+        s.nodes.add_aiida_types(n2)
+
+        self.assertEqual(RuleSequence(StashCommit(), rinp, StashPop(), rout).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
