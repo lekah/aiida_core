@@ -250,14 +250,23 @@ class TestRuleSequence(AiidaTestCase):
     def test_iterations_cycle(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence
         nodes = _setup_nodes_cycle()
-        r2 = Rule.get_from_string('N=n<-N')
+        r1 = Rule.get_from_string('N=n<-N')
+        r2 = Rule.get_from_string('N+=n<-N')
         s =  AiidaEntitiesCollection()
         s.nodes.set_keys(nodes[0].pk)
-        rs = RuleSequence(r2)
+        rs1 = RuleSequence(r1)
+        rs2 = RuleSequence(r2)
         # This follows the cycle for a fixed number of iterations:
         for i in range(1, 10):
-            rs.set_niter(i)
-            self.assertEqual(rs.apply(s.copy()).nodes.get_keys(), set([nodes[i%3].pk]))
+            rs1.set_niter(i)
+            self.assertEqual(rs1.apply(s.copy()).nodes.get_keys(), set([nodes[i%3].pk]))
+        pks = [n.pk for n in nodes]
+        # The update rule should not go bananas here, and stop  after three iterations:
+        for i in range(1, 10):
+            rs2.set_niter(i)
+            self.assertEqual(rs2.apply(s.copy()).nodes.get_keys(), set(pks[:i+1]))
+            self.assertEqual(rs2.get_last_niter(),min((i, 3)))
+        
 
 
     def test_iterations_node_2(self):
@@ -310,4 +319,18 @@ class TestStashCommit(AiidaTestCase):
         s =  AiidaEntitiesCollection()
         s.nodes.add_aiida_types(n2)
 
-        self.assertEqual(RuleSequence(StashCommit(), rinp, StashPop(), rout).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(
+            RuleSequence(StashCommit(), rinp, StashPop(), rout).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk])
+        )
+        # reversing the rules should lead to the same outcome
+        self.assertEqual(
+            RuleSequence(StashCommit(), rout, StashPop(), rinp).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk])
+        )
+
+        # The outcome is of course different without the stash usage!
+        self.assertEqual(
+            RuleSequence(rout, rinp).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk, n4.pk])
+        )
