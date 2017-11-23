@@ -61,12 +61,14 @@ RULE_REGEX = re.compile("""
 
 
 class StashCommit(object):
-    def apply(self, stash, collection):
+    only_update = True
+    def apply(self, collection, stash):
         stash.append(collection)
         return collection.copy()
 
 class StashPop(object):
-    def apply(self, stash, collection):
+    only_update = True
+    def apply(self, collection, stash):
         return stash.pop(-1)
 
 class Rule(object):
@@ -259,13 +261,18 @@ class RuleSequence(object):
         """
         iterations = 0
 
+        # The visited_collection is all the nodes I visited during my exploration!
+        # Also what I will return!
         visited_collection = collection
-        # I also have an operation_collection. This collection is being updated by the rule
-        # at the end of every loop, I put everything
+        # I also have an operation_collection, the main thing being updated
         operational_collection = collection.copy()
+        # dealt_with_collection is the collection of everything that has seen ALL the rules applied
+        # to itself, i.e. that was present in the beginning of a loop.
+        # NOTE: not the same as visited if we have stash commits/push
+        dealt_with_collection = collection.copy()
 
         #~ new_collection = operational_collection.copy()
-        #~ visited_collection = AiidaEntitiesCollection()
+        #~ visited_collection = 
         while True:
             if iterations == self._niter:
                 break
@@ -280,13 +287,16 @@ class RuleSequence(object):
                     operational_collection = item.apply(operational_collection, self._stash)
                 else:
                     assert(True, "Should not get here")
+                # I update here.
+                # TODO: Tricks with checking whether Stashe etc to avoid number of updates?
+                visited_collection += operational_collection
                 #~ print operational_collection.nodes._set
             # Now I update the visited collection which is the collection I keep track of:
             # So, what here is actually new?
             #~ operational_collection = operational_collection - visited_collection
-            operational_collection -= visited_collection
-            #~ visited_collection = visited_collection + operational_collection
-            visited_collection += operational_collection
+            operational_collection -= dealt_with_collection
+            dealt_with_collection = dealt_with_collection + operational_collection
+            
             iterations += 1
         self._last_niter = iterations
         return visited_collection
