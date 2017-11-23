@@ -1,10 +1,12 @@
-import re
+import re, copy
+
 
 from aiida.orm.querybuilder import QueryBuilder
 from aiida.orm.node import Node
 from aiida.orm.group import Group
 from aiida.orm.computer import Computer
 from aiida.orm.user import User
+from aiida.common.hashing import make_hash
 
 
 
@@ -12,6 +14,11 @@ BASE_DEFAULT_DICT = {'n':Node, 'u':User, 'g':Group, 'c':Computer}
 
 VALID_RELATIONSHIPS = {'--', '<-', '->', '>>', '<<', '', None}
 VALID_OPERATORS = {'=', '+=', '-=', None}
+
+NODE2NODE = 'node2node'
+NODE2GROUP = 'node2group'
+NODE2COMPUTER = 'node2computer'
+NODE2USER = 'node2user'
 
 class SubSetOfDB(object):
     def __init__(self, aiida_type):
@@ -86,9 +93,11 @@ class Rule(object):
             projecting_entity=_get_aiida_entity_from_string(match.group('projecting_entity')),
             relationship=_get_relationship(match.group('relationship')),
             relationship_entity=_get_aiida_entity_from_string(match.group('relationship_entity')),
+            string=string
         )
 
-    def __init__(self, set_entity, projecting_entity, operator, relationship_entity=None, relationship=None):
+    def __init__(self, set_entity, projecting_entity, operator,
+            relationship_entity=None, relationship=None, link_tracking=True, string=None):
         if not isinstance(set_entity, SubSetOfDB):
             raise ValueError()
         self._set_entity = set_entity
@@ -96,6 +105,9 @@ class Rule(object):
         self._relationship_entity = relationship_entity
         self._relationship = relationship
         self._operator = operator
+        self.set_link_tracking(link_tracking)
+        self._string = string
+
 
 
     @property
@@ -105,13 +117,17 @@ class Rule(object):
         """
         return self._operator.startswith('+')
 
-
+    def set_link_tracking(self, link_tracking):
+        self._link_tracking = link_tracking
     def apply(self, entities_collection):
         """
         N = N <- n
         """
 
-        def get_entity_n_filters(entity, additional_filters):
+        def get_entity_n_filters(entity, entities_collection, additional_filters):
+            """
+            TODO Docstring, and move out of here!
+            """
             if isinstance(entity, SubSetOfDB):
                 aiida_type = entity.aiida_type
                 filters={entities_collection[aiida_type].identifier:{'in':entities_collection[aiida_type].get_keys()}}
@@ -120,8 +136,61 @@ class Rule(object):
                 filters = {}
             return aiida_type, filters, [entities_collection[aiida_type].identifier]
 
-            # Todo add filters from spec!
-        set_entity, set_filters, _ = get_entity_n_filters(self._set_entity, {})
+        def get_relation_projections(entities_collection, projecting_entity, relationship_entity, relationship):
+            # TODO:  some checks
+            if issubclass(projecting_entity, Node):
+                if issubclass(relationship_entity, Node):
+                    if relationship in ('>>', '<<'):
+                        #~ edge_projections = ('depth',)
+                        assert(True, "")
+                    else:
+                        edge_projections = ('label', 'type', 'id')
+                elif issubclass(relationship_entity, Group):
+                    edge_projections = None
+                elif issubclass(relationship_entity, (Computer, User)):
+                    edge_projections = None
+                else:
+                    assert(True, "")
+            elif issubclass(projecting_entity, Group):
+                if issubclass(relationship_entity, Node):
+                    edge_projections = None
+                else:
+                    assert(True, "")
+            elif issubclass(projecting_entity, (Computer, User)):
+                if issubclass(relationship_entity, Node):
+                    edge_projections = None
+                else:
+                    assert(True, "")
+            else:
+                assert(True, "")
+            return entities_collection[relationship_entity].identifier, edge_projections
+
+
+        # Ok, here I need to make some strategic decisions
+        # 1) Am I tracking links?
+        tracking = self._link_tracking
+        # 2) Can I actually track links or is this futile here?
+        # 2a) Am I querying a relationship
+        if tracking:
+            if not self._relationship:
+                tracking = False
+            # 2b Am I adding the nodes that I'm querying in the relationship to the set or not?
+            # That's only the case if projecting nodes are in the db in the relationship nodes in my subset
+            elif not isinstance(self._relationship_entity, SubSetOfDB):
+                tracking = False
+            # It seems ok to track things even if the nodes are already on the set. I.e. to get more
+            # relationships!
+            #~ elif isinstance(self._projecting_entity, SubSetOfDB):
+                #~ tracking = False
+            elif not self._operator.startswith('+'):
+                tracking = False
+            elif '-' not in self._relationship:
+                # I can't deal with 
+                tracking = False
+            else:
+                tracking = True
+
+        set_entity, set_filters, _ = get_entity_n_filters(self._set_entity, entities_collection, {})
         qb_left = QueryBuilder().append(set_entity, filters=set_filters)
 
 
@@ -130,71 +199,130 @@ class Rule(object):
         # several querybuilder instances
         # i.e. N--n (node connected to other node regardless of direction!
         qb_right = [QueryBuilder()]
-        proj_entity, proj_filters, proj_project = get_entity_n_filters(self._projecting_entity, {})
+        proj_entity, proj_filters, proj_project = get_entity_n_filters(self._projecting_entity, entities_collection, {})
         qb_right[0].append(proj_entity, filters=proj_filters, project=proj_project, tag='p')
         if self._relationship:
             if not self._relationship_entity:
-                raise Exception() # should be before, no
-            rlshp_entity, rlshp_filters, _ = get_entity_n_filters(self._relationship_entity, {})
+                raise Exception() # should be before, no?
+
+            rlshp_entity, rlshp_filters, rlshp_project = get_entity_n_filters(
+                    self._relationship_entity, entities_collection, {})
+
+            if tracking:
+                rlshp_project, edge_project = get_relation_projections(
+                        entities_collection, proj_entity, rlshp_entity, self._relationship)
+                orders = []
+                edge_identifiers = []
+                
+            else:
+                rlshp_project = None
+                edge_project = None
             if issubclass(proj_entity, Node):
                 if issubclass(rlshp_entity, Node):
+                    edge_name = NODE2NODE
                     if self._relationship == '<-':
-                        qb_right[0].append(rlshp_entity, input_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, input_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((1,0,2,3))
+                            edge_identifiers.append(4)
                     elif self._relationship == '->':
-                        qb_right[0].append(rlshp_entity, output_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, output_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((0,1,2,3))
+                            edge_identifiers.append(4)
                     elif self._relationship == '>>':
-                        qb_right[0].append(rlshp_entity, descendant_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, descendant_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                     elif self._relationship == '<<':
-                        qb_right[0].append(rlshp_entity, ancestor_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, ancestor_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                     elif self._relationship == '--':
                         # A bit of QueryBuilder magic
                         qb_right.append(qb_right[0].copy())
-                        qb_right[0].append(rlshp_entity, output_of='p', filters=rlshp_filters)
-                        qb_right[1].append(rlshp_entity, input_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, output_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        qb_right[1].append(rlshp_entity, input_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((0,1,2,3))
+                            orders.append((1,0,2,3))
+                            edge_identifiers.append(4)
+                            edge_identifiers.append(4)
                     else:
                         raise NotImplementedError
                 elif issubclass(rlshp_entity, Group):
+                    edge_name = NODE2GROUP
                     if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, group_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, group_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((0,1))
+                            edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
 
                 elif issubclass(rlshp_entity, User):
+                    edge_name = NODE2USER
                     if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, creator_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, creator_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((0,1))
+                            edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
                 elif issubclass(rlshp_entity, Computer):
+                    edge_name = NODE2COMPUTER
                     if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, computer_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, computer_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((0,1))
+                            edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
                 else:
                     raise NotImplementedError
             elif issubclass(proj_entity, Group):
+                edge_name = NODE2GROUP
                 if issubclass(rlshp_entity, Node):
                     if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, member_of='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, member_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((1,0))
+                            edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
 
             elif issubclass(proj_entity, User):
+                edge_name = NODE2USER
                 if issubclass(rlshp_entity, Node):
                     if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, created_by='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, created_by='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((1,0))
+                            edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
 
             elif issubclass(proj_entity, Computer):
+                edge_name = NODE2COMPUTER
                 if issubclass(rlshp_entity, Node):
                     if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, has_computer='p', filters=rlshp_filters)
+                        qb_right[0].append(rlshp_entity, has_computer='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                        if tracking:
+                            orders.append((1,0))
+                            edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
             else:
                 raise NotImplementedError
 
-        qb_right_result = set([_ for qb in qb_right for _, in qb.iterall()])
+        if tracking:
+            #~ projection_key, = proj_project
+            #~ res = [qb.dict() for qb in qb_right]
+            #~ qb_right_result_list = [_ for qb in qb_right for _ in qb.iterall()]
+            #~ qb_right_result = [_[0] for  _ in qb_right_result_list]
+            #~ qb_right_result = set([row  ['p'][projection_key] for subres in res for row in subres])
+            res = [qb.all() for qb in qb_right]
+            qb_right_result = [_[0] for  subres in res for _ in subres]
+            pass
+        else:
+            qb_right_result = set([_ for qb in qb_right for _, in qb.iterall()])
+            
         if self._operator == '=':
             #~ print entities_collection[set_entity].set
             #~ print qb_right.all()
@@ -202,6 +330,16 @@ class Rule(object):
 
         elif self._operator == '+=':
             entities_collection[set_entity]._set_key_set_nocheck(entities_collection[set_entity]._set.union(qb_right_result))
+            # Here I'm adding the links!!
+            if tracking:
+                for o, subres,identifier in zip(orders, res, edge_identifiers):
+                    for row in subres:
+                        if identifier:
+                            edge_id = row[identifier]
+                        else:
+                            edge_id = make_hash(row)
+                        #~ print edge_id
+                        entities_collection[edge_name]._add_link_dict_no_check({edge_id:tuple(row[i] for i in o)})
 
         elif self._operator == '-=':
             entities_collection[set_entity]._set_key_set_nocheck(entities_collection[set_entity]._set.difference(qb_right_result))
@@ -230,14 +368,12 @@ class RuleSequence(object):
             if not isinstance(r, (Rule, RuleSequence, StashCommit, StashPop)):
                 raise ValueError("{} {} is not a valid input".format(type(r), r))
 
-        niter = kwargs.pop('niter', 1)
-        self.set_niter(niter)
-
+        self.set_niter(kwargs.pop('niter', 1))
+        self._track_links = bool(kwargs.pop('track_links', False))
 
         if kwargs:
             raise Exception("Unrecognized keywords {}".format(kwargs.keys()))
         self._rules = rules
-        self._niter = niter
         self._last_niter = None
         self._stash = []
 
@@ -440,13 +576,75 @@ class AiidaEntitySet(object):
     def __len__(self):
         return len(self._set)
 
+
+
+class AiidaLinkCollection(object):
+    def __init__(self,):
+        self._links = dict()
+
+    def add_links(self, **kwargs):
+        # TODO: check lengths, types, etc
+        self._add_links_no_check(kwargs)
+    @property
+    def links(self):
+        return self._links
+
+    def items(self):
+        return self._links.items()
+    def values(self):
+        return self._links.values()
+    def keys(self):
+        return self._links.keys()
+
+    def _add_link_dict_no_check(self, new_links):
+        #~ for k, v in kwargs:
+        self._links.update(new_links)
+
+    def __add__(self, other):
+        new = self.__class__()
+        new._add_link_dict_no_check(copy.copy(self.links))
+        new._add_link_dict_no_check(copy.copy(other.links))
+        return new
+
+    def __iadd__(self, other):
+        self._add_link_dict_no_check(copy.copy(other.links))
+        return self
+
+    def __sub__(self, other):
+        raise NotImplementedError
+        new = self.__class__()
+        new_links = copy.copy(self.links)
+        new._add_link_dict_no_check({k:v for k,v in new_links.items() if k not in other.links})
+        return new
+
+    def __isub__(self, other):
+
+        raise NotImplementedError
+        for k in other.links:
+            self._links.pop(k, None)
+        return self
+
+
 class AiidaEntitiesCollection(object):
+    """
+    Basically an AiiDA subgraph
+    """
     def __init__(self, ):
         # TODO: Identifiers
         self.nodes = AiidaEntitySet(Node)
         self.groups = AiidaEntitySet(Group)
         self.computers = AiidaEntitySet(Computer)
         self.users = AiidaEntitySet(User)
+        # The following are for the edges,
+        # for now, dictionaries with the link_id being the key!
+        # the values can be defined as they want, as long as it's consistent...
+        # for now I chose tuples from all the stuff I can get
+        # entry_in, entry_out, ...
+
+        self.nodes_nodes = AiidaLinkCollection()
+        self.nodes_groups = AiidaLinkCollection()
+        self.nodes_computers = AiidaLinkCollection()
+        self.nodes_users = AiidaLinkCollection()
 
     def __getitem__(self, key):
         if key is Node:
@@ -457,6 +655,26 @@ class AiidaEntitiesCollection(object):
             return self.computers
         elif key is User:
             return self.users
+        elif key == NODE2NODE:
+            return self.nodes_nodes
+        elif key == NODE2GROUP:
+            return self.nodes_groups
+        elif key == NODE2COMPUTER:
+            return self.nodes_computers
+        elif key == NODE2USER:
+            return self.nodes_users
+        else:
+            raise KeyError(key)
+
+    def __setitem__(self, key, val):
+        if key == NODE2NODE:
+            self.nodes_nodes = val
+        elif key == NODE2GROUP:
+            self.nodes_groups = val
+        elif key == NODE2COMPUTER:
+            self.nodes_computers = val
+        elif key == NODE2USER:
+            self.nodes_users = val
         else:
             raise KeyError(key)
 
@@ -469,14 +687,19 @@ class AiidaEntitiesCollection(object):
         new.groups = self.groups + other.groups
         new.computers = self.computers + other.computers
         new.users = self.users + other.users
+        for k in (NODE2COMPUTER, NODE2NODE, NODE2GROUP, NODE2USER):
+            new[k] = self[k] + other[k]
+
         return new
 
 
     def __iadd__(self, other):
         self.nodes += other.nodes
         self.groups += other.groups
-        self.computers +=  other.computers
-        self.users +=  other.users
+        self.computers += other.computers
+        self.users += other.users
+        for k in (NODE2COMPUTER, NODE2NODE, NODE2GROUP, NODE2USER):
+            self[k] = self[k] + other[k]
         return self
 
 
@@ -486,6 +709,8 @@ class AiidaEntitiesCollection(object):
         new.groups = self.groups - other.groups
         new.computers = self.computers - other.computers
         new.users = self.users - other.users
+        #~ new.nodes_nodes = self.nodes_nodes - other.nodes_nodes
+        
         return new
 
     def __isub__(self, other):
@@ -493,6 +718,8 @@ class AiidaEntitiesCollection(object):
         self.groups -= other.groups
         self.computers -=  other.computers
         self.users -= other.users
+        #~ self.nodes_nodes -= other.nodes_nodes
+
         return self
 
     def values(self):
@@ -504,6 +731,7 @@ class AiidaEntitiesCollection(object):
         other.groups = self.groups.copy()
         other.computers = self.computers.copy()
         other.users = self.users.copy()
+
         return other
 
 class GraphExplorer(object):

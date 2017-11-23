@@ -37,13 +37,13 @@ def _setup_nodes_simple_2():
     from aiida.orm.node import Node
     from aiida.common.links import LinkType
     n1, n2, n3, n4 = [Node().store() for i in range(4)]
-    n3.add_link_from(n2, link_type=LinkType.CREATE)
-    n2.add_link_from(n1, link_type=LinkType.INPUT)
-    n3.add_link_from(n4, link_type=LinkType.CREATE)
-    n4.add_link_from(n1, link_type=LinkType.INPUT)
+    n3.add_link_from(n2, link_type=LinkType.CREATE, label='n2_n3')
+    n2.add_link_from(n1, link_type=LinkType.INPUT, label='n1_n2')
+    n3.add_link_from(n4, link_type=LinkType.CREATE, label='n4_n3')
+    n4.add_link_from(n1, link_type=LinkType.INPUT, label='n1_n4')
     return (n1, n2, n3, n4)
 
-
+#~ @unittest.skipIf(True, '')
 class TestRule(AiidaTestCase):
 
 
@@ -206,6 +206,7 @@ class TestRule(AiidaTestCase):
         self.assertEqual(Rule.get_from_string('N=n--U').apply(s.copy()).nodes.get_keys(), set([n4.pk]))
         self.assertEqual(Rule.get_from_string('U=u--N').apply(s.copy()).users.get_keys(), set([automatic_user.id]))
 
+#~ @unittest.skipIf(True, '')
 class TestRuleSequence(AiidaTestCase):
 
     def test_rule_sequence_simple(self):
@@ -266,7 +267,6 @@ class TestRuleSequence(AiidaTestCase):
             rs2.set_niter(i)
             self.assertEqual(rs2.apply(s.copy()).nodes.get_keys(), set(pks[:i+1]))
             self.assertEqual(rs2.get_last_niter(),min((i, 3)))
-        
 
 
     def test_iterations_node_2(self):
@@ -305,7 +305,7 @@ class TestRuleSequence(AiidaTestCase):
         self.assertEqual(RuleSequence(r, niter=3).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
         self.assertEqual(RuleSequence(r, niter=4).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
 
-
+#~ @unittest.skipIf(True, '')
 class TestStashCommit(AiidaTestCase):
     def test_stash(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence, StashCommit, StashPop
@@ -334,3 +334,79 @@ class TestStashCommit(AiidaTestCase):
             RuleSequence(rout, rinp).apply(s.copy()).nodes.get_keys(),
             set([n1.pk, n2.pk, n3.pk, n4.pk])
         )
+
+class TestLinksRules(AiidaTestCase):
+    #~ @unittest.skipIf(True, '')
+    def test_links(self):
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence, StashCommit, StashPop
+        n1,n2,n3,n4 = _setup_nodes_simple_2()
+        s =  AiidaEntitiesCollection()
+        s.nodes.add_keys(n2.pk)
+
+        r1 = Rule.get_from_string('N+=n->N')
+        
+        r2 = Rule.get_from_string('N+=n<-N')
+
+        values = RuleSequence(r1,r2).apply(s.copy()).nodes_nodes.values()
+        vshould = set([
+            (n1.pk, n2.pk, u'n1_n2', u'inputlink'),
+            (n1.pk, n4.pk, u'n1_n4', u'inputlink'), 
+            (n2.pk, n3.pk, u'n2_n3', u'createlink')])
+        self.assertEqual(set(values), vshould)
+
+        values = RuleSequence(r1,r2, r1).apply(s.copy()).nodes_nodes.values()
+        vshould = set([
+            (n1.pk, n2.pk, u'n1_n2', u'inputlink'),
+            (n1.pk, n4.pk, u'n1_n4', u'inputlink'), 
+            (n2.pk, n3.pk, u'n2_n3', u'createlink'),
+            (n4.pk, n3.pk, u'n4_n3', u'createlink')])
+        self.assertEqual(set(values), vshould)
+
+
+    def test_group_nodes(self):
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence, StashCommit, StashPop
+        from aiida.orm import Group
+        n1,n2,n3 = _setup_nodes_simple_1()
+        g1 = Group(name='a').store()
+        g2 = Group(name='b').store()
+
+        g1.add_nodes((n1, n3))
+        g2.add_nodes((n2,n3))
+
+        s =  AiidaEntitiesCollection()
+        s.nodes.add_keys(n2.pk)
+
+        r1 = Rule.get_from_string('G+=g--N')
+        
+        r2 = Rule.get_from_string('N+=n--G')
+
+
+        res = RuleSequence(r1).apply(s.copy())
+        self.assertFalse(res.nodes_nodes.values())
+        self.assertEqual(set(res.nodes_groups.values()), set([(n2.pk, g2.id)]))
+
+        res = RuleSequence(r1, r2).apply(s.copy())
+        self.assertFalse(res.nodes_nodes.values())
+        self.assertEqual(set(res.nodes_groups.values()), set([(n3.pk,g2.id), (n2.pk, g2.id)]))
+
+        res = RuleSequence(r1, r2, r1).apply(s.copy())
+        self.assertFalse(res.nodes_nodes.values())
+        self.assertEqual(
+            set(res.nodes_groups.values()),
+            set([(n3.pk,g2.id), (n3.pk,g1.id), (n2.pk, g2.id)])
+        )
+
+        res = RuleSequence(r1, r2, r1, r2).apply(s.copy())
+        self.assertFalse(res.nodes_nodes.values())
+        self.assertEqual(
+            set(res.nodes_groups.values()),
+            set([(n3.pk,g2.id), (n3.pk,g1.id),(n1.pk,g1.id), (n2.pk, g2.id)])
+        )
+
+        res = RuleSequence(r1, r2, niter=2).apply(s.copy())
+        self.assertFalse(res.nodes_nodes.values())
+        self.assertEqual(
+            set(res.nodes_groups.values()),
+            set([(n3.pk,g2.id), (n3.pk,g1.id),(n1.pk,g1.id), (n2.pk, g2.id)])
+        )
+
