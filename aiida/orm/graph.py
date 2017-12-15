@@ -97,7 +97,8 @@ class Rule(object):
         )
 
     def __init__(self, set_entity, projecting_entity, operator,
-            relationship_entity=None, relationship=None, link_tracking=True, string=None):
+            relationship_entity=None, relationship=None, link_tracking=True, string=None,
+            projection_filters=None, relationship_filters=None, qb_kwargs=None):
         if not isinstance(set_entity, SubSetOfDB):
             raise ValueError()
         self._set_entity = set_entity
@@ -107,6 +108,9 @@ class Rule(object):
         self._operator = operator
         self.set_link_tracking(link_tracking)
         self._string = string
+        self.set_projection_filters(projection_filters)
+        self.set_relationship_filters(relationship_filters)
+        self.set_qb_kwargs(qb_kwargs)
 
 
 
@@ -119,6 +123,16 @@ class Rule(object):
 
     def set_link_tracking(self, link_tracking):
         self._link_tracking = link_tracking
+
+    def set_qb_kwargs(self, kwargs):
+        assert kwargs is None or isinstance(kwargs, dict), "filters have to be a valid dictionary"
+        self._qb_kwargs = kwargs or {}
+    def set_relationship_filters(self, filters):
+        assert filters is None or isinstance(filters, dict), "filters have to be a valid dictionary"
+        self._relationship_filters = filters
+    def set_projection_filters(self, filters):
+        assert filters is None or isinstance(filters, dict), "filters have to be a valid dictionary"
+        self._projection_filters = filters
     def apply(self, entities_collection):
         """
         N = N <- n
@@ -134,6 +148,13 @@ class Rule(object):
             else:
                 aiida_type = entity
                 filters = {}
+            # todo checks
+            if additional_filters is None:
+                pass
+            elif isinstance(additional_filters, dict):
+                filters.update(additional_filters)
+            else:
+                raise ValueError("additional filters has to be None or dict")
             return aiida_type, filters, [entities_collection[aiida_type].identifier]
 
         def get_relation_projections(entities_collection, projecting_entity, relationship_entity, relationship):
@@ -198,15 +219,15 @@ class Rule(object):
         # it has to be a list because some relationships can only be made with
         # several querybuilder instances
         # i.e. N--n (node connected to other node regardless of direction!
-        qb_right = [QueryBuilder()]
-        proj_entity, proj_filters, proj_project = get_entity_n_filters(self._projecting_entity, entities_collection, {})
+        qb_right = [QueryBuilder(**self._qb_kwargs)]
+        proj_entity, proj_filters, proj_project = get_entity_n_filters(self._projecting_entity, entities_collection, self._projection_filters)
         qb_right[0].append(proj_entity, filters=proj_filters, project=proj_project, tag='p')
         if self._relationship:
             if not self._relationship_entity:
                 raise Exception() # should be before, no?
 
             rlshp_entity, rlshp_filters, rlshp_project = get_entity_n_filters(
-                    self._relationship_entity, entities_collection, {})
+                    self._relationship_entity, entities_collection, self._relationship_filters)
 
             if tracking:
                 rlshp_project, edge_project = get_relation_projections(
@@ -737,3 +758,98 @@ class AiidaEntitiesCollection(object):
 class GraphExplorer(object):
     def __init__(self, instruction):
         pass
+
+
+
+def draw_graph(entities_collection, origin_node=None, format='dot', filename=None):
+    import os, tempfile
+    from aiida.orm import load_node
+    from aiida.orm.calculation import Calculation
+    from aiida.orm.calculation.job import JobCalculation
+    from aiida.orm.code import Code
+    from aiida.orm.node import Node
+    from aiida.common.links import LinkType
+    from aiida.orm.querybuilder import QueryBuilder
+    def draw_node_settings(node, **kwargs):
+        """
+        Returns a string with all infos needed in a .dot file  to define a node of a graph.
+        :param node:
+        :param kwargs: Additional key-value pairs to be added to the returned string
+        :return: a string
+        """
+        if isinstance(node, Calculation):
+            shape = "shape=polygon,sides=4"
+        elif isinstance(node, Code):
+            shape = "shape=diamond"
+        else:
+            shape = "shape=ellipse"
+        if kwargs:
+            additional_params = ",{}".format(
+                ",".join('{}="{}"'.format(k, v) for k, v in kwargs.iteritems()))
+        else:
+            additional_params = ""
+        if node.label:
+            label_string = "\n'{}'".format(node.label)
+            additional_string = ""
+        else:
+            additional_string = "\n {}".format(node.get_desc())
+            label_string = ""
+        labelstring = 'label="{} ({}){}{}"'.format(
+            node.__class__.__name__, node.pk, label_string,
+            additional_string)
+        return "N{} [{},{}{}];".format(node.pk, shape, labelstring,
+                                       additional_params)
+
+    def draw_link_settings(inp_id, out_id, link_label, link_type):
+        if link_type in (LinkType.CREATE.value, LinkType.INPUT.value):
+            style='solid'  # Solid lines and black colors
+            color = "0.0 0.0 0.0" # for CREATE and INPUT (The provenance graph)
+        elif link_type == LinkType.RETURN.value:
+            style='dotted'  # Dotted  lines of
+            color = "0.0 0.0 0.0" # black color for Returns
+        elif link_type == LinkType.CALL.value:
+            style='bold' # Bold lines and
+            color = "0.0 1.0 1.0" # Bright red for calls
+        else:
+            style='solid'   # Solid and
+            color="0.0 0.0 0.5" #grey lines for unspecified links!
+        return '    {} -> {} [label="{}", color="{}", style="{}"];'.format("N{}".format(inp_id),  "N{}".format(out_id), link_label, color, style)
+    # Writing the graph to a temporary file
+
+
+
+    #~ fd, fname = tempfile.mkstemp(suffix='.dot')
+    fname = 'test.dot'
+    #~ links[link_id] = draw_link_settings(inp.pk, node.pk, link_label, link_type)
+    nodes = {}
+    links = {}
+
+    for node_identifier in entities_collection.nodes.get_keys():
+        nodes[node_identifier] = draw_node_settings(load_node(node_identifier))
+    for link_key, link_vals in entities_collection.nodes_nodes.items():
+        links[link_key] = draw_link_settings(*link_vals)
+        #~ print link_values
+
+    if isinstance(origin_node, (int,basestring)):
+        # assuming this is a valid key:
+        origin_node  = load_node(origin_node)
+
+    if origin_node is not None:
+        nodes[origin_node.pk] = draw_node_settings(origin_node, style='filled', color='lightblue')
+    with open(fname, 'w') as fout:
+        fout.write("digraph G {\n")
+        for l_name, l_values in links.iteritems():
+            fout.write('    {}\n'.format(l_values))
+        for n_name, n_values in nodes.iteritems():
+            fout.write("    {}\n".format(n_values))
+        #~ for n_name, n_values in additional_nodes.iteritems():
+            #~ fout.write("    {}\n".format(n_values))
+        fout.write("}\n")
+
+    # Now I am producing the output file
+
+    output_file_name = "{0}.{format}".format(filename or origin_node.pk, format=format)
+    exit_status = os.system('dot -T{format} {0} -o {1}'.format(fname, output_file_name, format=format))
+    # cleaning up by removing the temporary file
+    #~ os.remove(fname)
+    return exit_status, output_file_name
