@@ -61,7 +61,7 @@ def draw_graph(origin_node, ancestor_depth=None, descendant_depth=None, format='
         else:
             additional_string = "\n {}".format(node.get_desc())
             label_string = ""
-        labelstring = 'label="{} ({}){}{}"'.format(
+        labelstring = 'label="{} ( {} ){}{}"'.format(
             node.__class__.__name__, node.pk, label_string,
             additional_string)
         return "N{} [{},{}{}];".format(node.pk, shape, labelstring,
