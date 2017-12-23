@@ -460,9 +460,7 @@ class RuleSequence(object):
     def get_from_string(cls, string):
         subrules = []
         
-        # The first thing I do is 
-        # First I check if this is a valid Operation
-        
+        # The first thing I do is
         match = RULE_REGEX.search(string)
         # If this is a match, I have a simple rule:
         if match:
