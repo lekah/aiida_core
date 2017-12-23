@@ -43,7 +43,7 @@ def _setup_nodes_simple_2():
     n4.add_link_from(n1, link_type=LinkType.INPUT, label='n1_n4')
     return (n1, n2, n3, n4)
 
-@unittest.skipIf(True, '')
+#~ @unittest.skipIf(True, '')
 class TestRule(AiidaTestCase):
 
 
@@ -83,7 +83,7 @@ class TestRule(AiidaTestCase):
         s =  AiidaEntitiesCollection()
         s.nodes.add_aiida_types(n2)
         # Operation 1: A rule to only get the nodes that have input:
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.ASSIGN, projecting_entity=SubSetOfDB(Node),
                 relationship=relationships.LEFTLINKED, relationship_entity=Node
                 ).apply(s.copy()).nodes.get_keys(), set([n2.pk]))
@@ -92,7 +92,7 @@ class TestRule(AiidaTestCase):
 
         # Operation 2: The same with ancestors:
         # self.assertEqual(to only get the nodes that have input:
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.ASSIGN, projecting_entity=SubSetOfDB(Node),
                 relationship=relationships.LEFTPATH, relationship_entity=Node
             ).apply(s.copy()).nodes.get_keys(), set([n2.pk]))
@@ -101,7 +101,7 @@ class TestRule(AiidaTestCase):
 
 
         # A rule that assignes the outputs of N to N
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.ASSIGN, projecting_entity=Node,
                 relationship=relationships.LEFTLINKED, relationship_entity=SubSetOfDB(Node)
             ).apply(s.copy()).nodes.get_keys(), set([n3.pk]))
@@ -110,7 +110,7 @@ class TestRule(AiidaTestCase):
 
 
         # A rule that assignes the ancestors of N to N
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.ASSIGN, projecting_entity=Node,
                 relationship=relationships.LEFTPATH, relationship_entity=SubSetOfDB(Node)
             ).apply(s.copy()).nodes.get_keys(), set([n3.pk]))
@@ -119,7 +119,7 @@ class TestRule(AiidaTestCase):
 
 
         # A rule that assignes the inputs of N to N
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.ASSIGN, projecting_entity=Node,
                 relationship=relationships.RIGHTLINKED, relationship_entity=SubSetOfDB(Node)
             ).apply(s.copy()).nodes.get_keys(), set([n1.pk]))
@@ -128,7 +128,7 @@ class TestRule(AiidaTestCase):
 
 
         # A rule that updates N with the inputs of N
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.UPDATE, projecting_entity=Node,
                 relationship=relationships.RIGHTLINKED, relationship_entity=SubSetOfDB(Node)
             ).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
@@ -137,7 +137,7 @@ class TestRule(AiidaTestCase):
 
 
         # A rule that reassigns N with inputs from N
-        self.assertEqual(Operation(set_entity=SubSetOfDB(Node), 
+        self.assertEqual(Operation(set_entity=SubSetOfDB(Node),
                 operator=operators.ASSIGN, projecting_entity=Node,
                 relationship=relationships.LINKED, relationship_entity=SubSetOfDB(Node)
             ).apply(s.copy()).nodes.get_keys(), set([n1.pk, n3.pk]))
@@ -291,43 +291,64 @@ class TestRuleSequence(AiidaTestCase):
         s =  AiidaEntitiesCollection()
         s.nodes.add_keys(n2.pk)
         # Operation gets the inputs
-        r1 = Operation.get_from_string('N=n->N')
+        r1s = 'N=n->N'
+        r1 = Operation.get_from_string(r1s)
         # Operation gets the outputs
-        r2 = Operation.get_from_string('N=n<-N')
+        r2s = 'N=n<-N'
+        r2 = Operation.get_from_string(r2s)
         # Operation that updates with the inputs
-        r3 = Operation.get_from_string('N+=n->N')
+        r3s = 'N+=n->N'
+        r3 = Operation.get_from_string(r3s)
         # Operation that updates with outputs
-        r4 = Operation.get_from_string('N+=n<-N')
+        r4s = 'N+=n<-N'
+        r4 = Operation.get_from_string(r4s)
 
         self.assertEqual(r1.apply(s.copy()).nodes.get_keys(), set([n1.pk]))
         self.assertEqual(r2.apply(s.copy()).nodes.get_keys(), set([n3.pk]))
 
         self.assertEqual(RuleSequence(r1,r2).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('{} {}'.format(r1s,r2s)).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+
         self.assertEqual(RuleSequence(r2, r1).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('{} {}'.format(r2s, r1s)).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+
         # Now I first update with inputs and then with outputs
         self.assertEqual(RuleSequence(r3, r4).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('{} {}'.format(r3s, r4s)).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk, n4.pk]))
+
         # Now I first update with outputs and then with inputs
         self.assertEqual(RuleSequence(r4, r3).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('{} {}'.format(r4s, r3s)).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk, n4.pk]))
+
 
 
     def test_iterations_node_1(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Operation, RuleSequence
         n1,n2,n3,n4 = _setup_nodes_simple_2()
-        r2 = Operation.get_from_string('N=n<-N')
+        r2s = 'N=n<-N'
+        r2 = Operation.get_from_string(r2s)
         s =  AiidaEntitiesCollection()
         s.nodes.set_keys(n1.pk)
         # This get's the direct outputs of n1
         self.assertEqual(RuleSequence(r2, niter=1).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('{}'.format(r2s)).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('({})'.format(r2s)).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
+        self.assertEqual(RuleSequence.get_from_string('({})1'.format(r2s)).apply(s.copy()).nodes.get_keys(), set([n2.pk, n4.pk]))
         # This get's the outputs of the outputs of n1
         self.assertEqual(RuleSequence(r2, niter=2).apply(s.copy()).nodes.get_keys(), set([n3.pk]))
+        self.assertEqual(RuleSequence.get_from_string('({})2'.format(r2s)).apply(s.copy()).nodes.get_keys(), set([n3.pk]))
+
         # This get's the outputs of the outputs of the outputs of n1
         self.assertEqual(RuleSequence(r2, niter=3).apply(s.copy()).nodes.get_keys(), set([]))
+        self.assertEqual(RuleSequence.get_from_string('({})3'.format(r2s)).apply(s.copy()).nodes.get_keys(), set([]))
 
     def test_iterations_cycle(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Operation, RuleSequence
         nodes = _setup_nodes_cycle()
-        r1 = Operation.get_from_string('N=n<-N')
-        r2 = Operation.get_from_string('N+=n<-N')
+        r1s = 'N=n<-N'
+        r1 = Operation.get_from_string(r1s)
+        r2s = 'N+=n<-N'
+        r2 = Operation.get_from_string(r2s)
         s =  AiidaEntitiesCollection()
         s.nodes.set_keys(nodes[0].pk)
         rs1 = RuleSequence(r1)
@@ -336,13 +357,17 @@ class TestRuleSequence(AiidaTestCase):
         for i in range(1, 10):
             rs1.set_niter(i)
             self.assertEqual(rs1.apply(s.copy()).nodes.get_keys(), set([nodes[i%3].pk]))
+            self.assertEqual(RuleSequence.get_from_string('({}){}'.format(r1s, i)).apply(s.copy()).nodes.get_keys(), set([nodes[i%3].pk]))
         pks = [n.pk for n in nodes]
         # The update rule should not go bananas here, and stop  after three iterations:
         for i in range(1, 10):
             rs2.set_niter(i)
             self.assertEqual(rs2.apply(s.copy()).nodes.get_keys(), set(pks[:i+1]))
+            rs2_from_string = RuleSequence.get_from_string('({}){}'.format(r2s, i))
+            self.assertEqual(rs2_from_string.apply(s.copy()).nodes.get_keys(), set(pks[:i+1]))
             self.assertEqual(rs2.get_last_niter(),min((i, 3)))
-
+            # There is one more nested level when I get from string, I have to look at the iterations of the first rule
+            self.assertEqual(rs2_from_string._rules[0].get_last_niter(),min((i, 3)))
 
     def test_iterations_node_2(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Operation, RuleSequence
@@ -375,20 +400,24 @@ class TestRuleSequence(AiidaTestCase):
         s =  AiidaEntitiesCollection()
         s.nodes.add_keys(n1.pk)
         self.assertEqual(RuleSequence(r, niter=1).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
-        self.assertEqual(RuleSequence.get_from_string('(N+=n<N)2').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
-        
+        self.assertEqual(RuleSequence.get_from_string('(N+=n<-N)').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
+        self.assertEqual(RuleSequence.get_from_string('(N+=n<-N)1').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
 
         self.assertEqual(RuleSequence(r, niter=2).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(RuleSequence(RuleSequence(r, niter=2)).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(RuleSequence.get_from_string('(N+=n<-N)2').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
         self.assertEqual(RuleSequence(r, niter=3).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
-        self.assertEqual(RuleSequence(r, niter=4).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
 
+        self.assertEqual(RuleSequence.get_from_string('(N+=n<-N)3').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(RuleSequence(r, niter=4).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(RuleSequence.get_from_string('(N+=n<-N)4').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
 
     def test_rule_sequence_from_string(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Operation, RuleSequence
         n1,n2,n3 = _setup_nodes_cycle()
-        r =RuleSequence.get_from_string('(N+=n<N)2')
+        #~ r =RuleSequence.get_from_string('(N+=n<N)2')
 
-@unittest.skipIf(True, '')
+#~ @unittest.skipIf(True, '')
 class TestStashCommit(AiidaTestCase):
     def test_stash(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Operation, RuleSequence, StashCommit, StashPop
@@ -396,26 +425,42 @@ class TestStashCommit(AiidaTestCase):
         #~ print
         #~ print [n.pk for n in (n1,n2,n3,n4)]
         # Operation to update with outputs
-        rout = Operation.get_from_string('N+=n<<N')
+        routs = 'N+=n<<N'
+        rout = Operation.get_from_string(routs)
         # Operation to update with inputs
-        rinp = Operation.get_from_string('N+=n>>N')
+        rinps = 'N+=n>>N'
+        rinp = Operation.get_from_string(rinps)
         s =  AiidaEntitiesCollection()
         s.nodes.add_aiida_types(n2)
 
         self.assertEqual(
             RuleSequence(StashCommit(), rinp, StashPop(), rout).apply(s.copy()).nodes.get_keys(),
             set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(
+            RuleSequence(RuleSequence.get_from_string(' [ {} ] {} '.format(rinps, routs))).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(
+            RuleSequence(RuleSequence.get_from_string('[{}]{}'.format(rinps, routs))).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk]))
         # reversing the rules should lead to the same outcome
         self.assertEqual(
             RuleSequence(StashCommit(), rout, StashPop(), rinp).apply(s.copy()).nodes.get_keys(),
             set([n1.pk, n2.pk, n3.pk]))
+        self.assertEqual(
+            RuleSequence(RuleSequence.get_from_string('[{}]{}'.format(routs, rinps))).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk]))
+
         # The outcome is of course different without the stash usage!
         self.assertEqual(
             RuleSequence(rout, rinp).apply(s.copy()).nodes.get_keys(),
             set([n1.pk, n2.pk, n3.pk, n4.pk])
         )
+        self.assertEqual(
+            RuleSequence(RuleSequence.get_from_string('{} {}'.format(rinps, routs))).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk]))
 
-@unittest.skipIf(True, '')
+
+#~ @unittest.skipIf(True, '')
 class TestLinksRules(AiidaTestCase):
     def test_links(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Operation, RuleSequence, StashCommit, StashPop
@@ -424,13 +469,13 @@ class TestLinksRules(AiidaTestCase):
         s.nodes.add_keys(n2.pk)
 
         r1 = Operation.get_from_string('N+=n->N')
-        
+
         r2 = Operation.get_from_string('N+=n<-N')
 
         values = RuleSequence(r1,r2).apply(s.copy()).nodes_nodes.values()
         vshould = set([
             (n1.pk, n2.pk, u'n1_n2', u'inputlink'),
-            (n1.pk, n4.pk, u'n1_n4', u'inputlink'), 
+            (n1.pk, n4.pk, u'n1_n4', u'inputlink'),
             (n2.pk, n3.pk, u'n2_n3', u'createlink')])
         #~ print '@@@@@@@@@@@@@@', len(values)
         self.assertEqual(set(values), vshould)
@@ -438,7 +483,7 @@ class TestLinksRules(AiidaTestCase):
         values = RuleSequence(r1,r2, r1).apply(s.copy()).nodes_nodes.values()
         vshould = set([
             (n1.pk, n2.pk, u'n1_n2', u'inputlink'),
-            (n1.pk, n4.pk, u'n1_n4', u'inputlink'), 
+            (n1.pk, n4.pk, u'n1_n4', u'inputlink'),
             (n2.pk, n3.pk, u'n2_n3', u'createlink'),
             (n4.pk, n3.pk, u'n4_n3', u'createlink')])
         self.assertEqual(set(values), vshould)
@@ -458,7 +503,7 @@ class TestLinksRules(AiidaTestCase):
         s.nodes.add_keys(n2.pk)
 
         r1 = Operation.get_from_string('G+=g--N')
-        
+
         r2 = Operation.get_from_string('N+=n--G')
 
 

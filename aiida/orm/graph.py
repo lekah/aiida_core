@@ -53,6 +53,9 @@ FACTORY_ABBREVATIONS = frozendict({
 class SubSetOfDB(object):
     def __init__(self, aiida_type):
         self._aiida_type = aiida_type
+
+    def __str__(self):
+        return 'SubSet of {}'.format(str(self._aiida_type))
     @property
     def aiida_type(self):
         return self._aiida_type
@@ -118,12 +121,16 @@ RULE_REGEX = re.compile("""
 
 class StashCommit(object):
     only_update = True
+    def __str__(self):
+        return '['
     def apply(self, collection, stash):
         stash.append(collection)
         return collection.copy()
 
 class StashPop(object):
     only_update = True
+    def __str__(self):
+        return ']'
     def apply(self, collection, stash):
         return stash.pop(-1)
 
@@ -181,7 +188,9 @@ class Operation(object):
         self.set_relationship_filters(relationship_filters)
         self.set_qb_kwargs(qb_kwargs)
 
-
+    def __str__(self):
+        #~ return st(self._set_entity, self._projecting_entity
+        return ' '.join((str(self._set_entity), self._operator, str(self._projecting_entity), self._relationship, str(self._relationship_entity)))
 
     @property
     def only_update(self):
@@ -275,7 +284,7 @@ class Operation(object):
             elif self._operator != operators.UPDATE:
                 tracking = False
             elif self._relationship not in (relationships.LINKED, relationships.LEFTLINKED, relationships.RIGHTLINKED):
-                # I can't deal with 
+                # I can't deal with
                 tracking = False
             else:
                 tracking = True
@@ -309,7 +318,7 @@ class Operation(object):
                         entities_collection, proj_entity, rlshp_entity, self._relationship)
                 orders = []
                 edge_identifiers = []
-                
+
             else:
                 rlshp_project = None
                 edge_project = None
@@ -458,19 +467,101 @@ class RuleSequence(object):
 
     @classmethod
     def get_from_string(cls, string):
-        subrules = []
-        
-        # The first thing I do is
-        match = RULE_REGEX.search(string)
-        # If this is a match, I have a simple rule:
-        if match:
-            return cls(Operation.get_from_string(string))
-        else:
-            pass
-            # I try to recursively identify
+        string = string.strip()
+        if RULE_REGEX.search(string):
+            # You have to try and strip stuff here TODO
+            return RuleSequence(Operation.get_from_string(string))
 
-        for match in RULE_REGEX.finditer(string):
-            print match.group(0)
+
+        rules = []
+        escaping = False
+
+        commits_to_stash_counter = 0
+        news = ""
+        s = iter(string)
+        #~ print
+        try:
+            while True:
+                c = s.next()
+                #~ print c
+                if escaping:
+                    news += c
+                    escaping = False
+                elif c == '\\':
+                    escaping = True
+                    news += c
+                elif c in ' [](':
+                    if news:
+                        rules.append(RuleSequence.get_from_string(news))
+                        news = ""
+                    if c == ' ':
+                        pass
+                    elif c == '[':
+                        rules.append(StashCommit())
+                        commits_to_stash_counter += 1
+                    elif c == ']':
+                        if commits_to_stash_counter == 0:
+                            raise Exception("You're popping more times from stash than you commit")
+                        rules.append(StashPop())
+                        commits_to_stash_counter -= 1
+                    elif c == '(':
+                        open_brackets = 1
+                        #~ print "searching for final bracket"
+                        try:
+                            while True:
+                                c = s.next()
+                                #~ print ' ', c
+                                if escaping:
+                                    escaping = False
+                                    news+=c
+                                elif c == '\\':
+                                    escaping = True
+                                    news += c
+                                elif c == '(':
+                                    open_brackets += 1
+                                elif c == ')':
+                                    open_brackets -= 1
+                                    if open_brackets == 0:
+                                        #~ print "The final bracket"
+                                        break
+                                else:
+                                    news += c
+                        except StopIteration:
+                            raise Exception("Brackets not closed")
+                        rs = RuleSequence.get_from_string(news)
+                        # What is the value behind:
+                        numspec = ''
+                        try:
+                            while True:
+                                c = s.next()
+                                if c in '0123456789':
+                                    numspec += c
+                                elif c == '*':
+                                    numspec = '*'
+                                    raise StopIteration
+                                else:
+                                    raise StopIteration
+                        except StopIteration:
+                            if numspec == '*':
+                                niter = -1
+                            elif numspec:
+                                niter = int(numspec)
+                            else:
+                                niter = 1
+                        #~ print "adding", rs, "with niter={}".format(niter)
+                        rs.set_niter(niter)
+                        rules.append(rs)
+                        news = ""
+                else:
+                    news += c
+        except StopIteration:
+            if news:
+                rules.append(RuleSequence.get_from_string(news))
+        #~ print rules
+        return RuleSequence(*rules)
+
+    def __str__(self):
+        return '({}){}'.format( ' '.join([str(r) for r in self._rules]), self._niter)
 
     def __init__(self, *rules, **kwargs):
         """
@@ -521,7 +612,7 @@ class RuleSequence(object):
         dealt_with_collection = collection.copy()
 
         #~ new_collection = operational_collection.copy()
-        #~ visited_collection = 
+        #~ visited_collection =
         while True:
             if iterations == self._niter:
                 break
@@ -545,7 +636,7 @@ class RuleSequence(object):
             #~ operational_collection = operational_collection - visited_collection
             operational_collection -= dealt_with_collection
             dealt_with_collection = dealt_with_collection + operational_collection
-            
+
             iterations += 1
         self._last_niter = iterations
         return visited_collection
@@ -819,7 +910,7 @@ class AiidaEntitiesCollection(object):
         new.computers = self.computers - other.computers
         new.users = self.users - other.users
         #~ new.nodes_nodes = self.nodes_nodes - other.nodes_nodes
-        
+
         return new
 
     def __isub__(self, other):
@@ -844,10 +935,49 @@ class AiidaEntitiesCollection(object):
         return other
 
 class GraphExplorer(object):
-    def __init__(self, instruction):
-        pass
+    def __init__(self, recipe,
+            node_pks=None, node_uuids=None, group_pks=None, group_names=None, group_uuids=None,
+            node_identifier='id', group_identifier='id'):
+        # starting with the nodes:
+        node_ors = []
+        if node_pks:
+            node_ors.append({'id':{'in':node_pks}})
+        if node_uuids:
+            node_ors.append({'uuid':{'in':node_uuids}})
+        if node_ors:
+            qb = QueryBuilder()
+            qb.append(Node, filters={'or':node_ors}, project=node_identifier)
+            node_identifiers = set([_ for _, in  qb.distinct().iterall()])
+        else:
+            node_identifiers = set()
 
 
+        group_ors = []
+        if group_pks:
+            group_ors.append({'id':{'in':group_pks}})
+        if group_uuids:
+            group_ors.append({'uuid':{'in':group_uuids}})
+        if group_names:
+            group_ors.append({'name':{'in':group_names}})
+        if group_ors:
+            qb = QueryBuilder()
+            qb.append(Group, filters={'or':group_ors}, project=group_identifier)
+            group_identifiers = set([_ for _, in  qb.distinct().iterall()])
+        else:
+            group_identifiers = set()
+
+        self._entities_collection = AiidaEntitiesCollection()
+        self._entities_collection.nodes._set_key_set_nocheck(node_identifiers)
+        self._entities_collection.groups._set_key_set_nocheck(group_identifiers)
+
+        self._recipe = recipe
+    def explore(self):
+        RuleSequence.get_from_string(self._recipe).apply(self._entities_collection)
+        print self._entities_collection.nodes._set
+
+
+    def draw(self):
+        draw_graph(self._entities_collection, format='pdf', filename='temp')
 
 def draw_graph(entities_collection, origin_node=None, format='dot', filename=None):
     import os, tempfile

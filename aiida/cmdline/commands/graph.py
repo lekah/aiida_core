@@ -16,6 +16,17 @@ from aiida.cmdline.baseclass import VerdiCommandWithSubcommands
 from aiida.common.exceptions import NotExistent
 
 
+def PositiveInt(value):
+    try:
+        ivalue=int(value)
+        if ivalue < 0:
+            raise Exception("Negative value")
+        return ivalue
+    except Exception as e:
+        print e
+        raise argparse.ArgumentTypeError("%s is not a non-negative integer" % value)
+
+
 
 class Graph(VerdiCommandWithSubcommands):
     """
@@ -38,9 +49,35 @@ class Graph(VerdiCommandWithSubcommands):
             load_dbenv()
 
         self.valid_subcommands = {
-            'generate': (self.graph_generate, self.complete_none)
+            'generate': (self.graph_generate, self.complete_none),
+            'show': (self.graph_show, self.complete_none)
             # TODO: add a command to find connections between two points
         }
+
+
+    def graph_show(self, *args):
+        from aiida.orm.graph import GraphExplorer
+        from aiida.orm.querybuilder import QueryBuilder
+        # Parse input arguments
+        parser = argparse.ArgumentParser(
+            prog=self.get_full_command_name(),
+            description='Show a graph, received from populating a subgraph and expanding')
+
+        parser.add_argument('-r','--recipe', type=str, nargs='+', default='N+=n--G [ (N+=n<-N)* ] (N+=n->N)*')
+
+        parser.add_argument('-n', '--node-pks', type=int, nargs='+', default=[])
+        parser.add_argument('-N', '--node-uuids', type=str, nargs='+', default=[])
+
+        parser.add_argument('-G', '--group-pks', type=int, nargs='+', default=[])
+        parser.add_argument('-g', '--group-names', type=str, nargs='+', default=[])
+        parser.add_argument('--group-uuids', type=str, nargs="+", default=[])
+
+        args = list(args)
+        parsed_args = parser.parse_args(args)
+
+        g = GraphExplorer(**vars(parsed_args))
+        g.explore()
+        g.draw()
 
     def graph_generate(self, *args):
         """
@@ -52,15 +89,6 @@ class Graph(VerdiCommandWithSubcommands):
         from aiida.common.graph import draw_graph
 
 
-        def PositiveInt(value):
-            try:
-                ivalue=int(value)
-                if ivalue < 0:
-                    raise Exception("Negative value")
-                return ivalue
-            except Exception as e:
-                print e
-                raise argparse.ArgumentTypeError("%s is not a non-negative integer" % value)
 
         # Parse input arguments
         parser = argparse.ArgumentParser(
