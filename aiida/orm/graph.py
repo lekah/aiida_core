@@ -127,7 +127,7 @@ class StashPop(object):
     def apply(self, collection, stash):
         return stash.pop(-1)
 
-class Rule(object):
+class Operation(object):
     @classmethod
     def get_from_string(cls, string):
         """
@@ -186,7 +186,7 @@ class Rule(object):
     @property
     def only_update(self):
         """
-        :returns: A boolean, whether the Rule is an UpdateRule. This allows for tricks in the RuleSequence!
+        :returns: A boolean, whether the Operation is an UpdateRule. This allows for tricks in the RuleSequence!
         """
         return self._operator == operators.UPDATE
 
@@ -461,13 +461,14 @@ class RuleSequence(object):
         subrules = []
         
         # The first thing I do is 
-        # First I check if this is a valid Rule
-        for 
+        # First I check if this is a valid Operation
+        
         match = RULE_REGEX.search(string)
         # If this is a match, I have a simple rule:
         if match:
-            return cls(Rule.get_from_string(string))
+            return cls(Operation.get_from_string(string))
         else:
+            pass
             # I try to recursively identify
 
         for match in RULE_REGEX.finditer(string):
@@ -475,11 +476,11 @@ class RuleSequence(object):
 
     def __init__(self, *rules, **kwargs):
         """
-        :param *rules: Instances of Rule, RuleSequence, StashPop and StashCommit that will be executed in that order
+        :param *rules: Instances of Operation, RuleSequence, StashPop and StashCommit that will be executed in that order
         :param
         """
         for r in rules:
-            if not isinstance(r, (Rule, RuleSequence, StashCommit, StashPop)):
+            if not isinstance(r, (Operation, RuleSequence, StashCommit, StashPop)):
                 raise ValueError("{} {} is not a valid input".format(type(r), r))
 
         self.set_niter(kwargs.pop('niter', 1))
@@ -495,7 +496,7 @@ class RuleSequence(object):
     @property
     def only_update(self):
         """
-        :returns: A boolean, whether the Rule is an UpdateRule. This allows for tricks in the RuleSequence!
+        :returns: A boolean, whether the Operation is an UpdateRule. This allows for tricks in the RuleSequence!
         """
         return all([r.only_update for r in self._rules])
 
@@ -530,7 +531,7 @@ class RuleSequence(object):
                 break
             #~ operational_collection = new_collection.copy()
             for item in self._rules:
-                if isinstance(item, (Rule, RuleSequence)):
+                if isinstance(item, (Operation, RuleSequence)):
                     # I change the operational collection in place!
                     operational_collection = item.apply(operational_collection)
                 elif isinstance(item, (StashCommit, StashPop)):
@@ -563,7 +564,7 @@ class RuleSequence(object):
                 break
             #~ operational_collection = new_collection.copy()
             for item in self._rules:
-                if isinstance(item, (Rule, RuleSequence)):
+                if isinstance(item, (Operation, RuleSequence)):
                     # I change the operational collection in place!
                     operational_collection = item.apply(operational_collection)
                 elif isinstance(item, (StashCommit, StashPop)):
