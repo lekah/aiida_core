@@ -43,7 +43,7 @@ def _setup_nodes_simple_2():
     n4.add_link_from(n1, link_type=LinkType.INPUT, label='n1_n4')
     return (n1, n2, n3, n4)
 
-#~ @unittest.skipIf(True, '')
+@unittest.skipIf(True, '')
 class TestRule(AiidaTestCase):
 
 
@@ -77,35 +77,105 @@ class TestRule(AiidaTestCase):
 
 
     def test_simple_node_relationship(self):
-        from aiida.orm.graph import AiidaEntitiesCollection, Rule
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule, SubSetOfDB, operators, relationships
         from aiida.orm.node import Node
         n1,n2,n3 = _setup_nodes_simple_1()
         s =  AiidaEntitiesCollection()
         s.nodes.add_aiida_types(n2)
-        # A rule to only get the nodes that have input or ancestors!
+        # Rule 1: A rule to only get the nodes that have input:
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.ASSIGN, projecting_entity=SubSetOfDB(Node),
+                relationship=relationships.LEFTLINKED, relationship_entity=Node
+                ).apply(s.copy()).nodes.get_keys(), set([n2.pk]))
+        # I do the same instantiating the rule from a string
         self.assertEqual(Rule.get_from_string('N=N<-n').apply(s.copy()).nodes.get_keys(), set([n2.pk]))
-        self.assertEqual(Rule.get_from_string('N=N<<n').apply(s.copy()).nodes.get_keys(), set([n2.pk]))
-        # A rule that assignes the outputs of N to N
-        self.assertEqual(Rule.get_from_string('N=n<-N').apply(s.copy()).nodes.get_keys(), set([n3.pk]))
-        # A rule that assignes the ancestors of N to N
-        self.assertEqual(Rule.get_from_string('N=n<<N').apply(s.copy()).nodes.get_keys(), set([n3.pk]))
-        # A rule that assignes the inputs of N to N
-        self.assertEqual(Rule.get_from_string('N=n->N').apply(s.copy()).nodes.get_keys(), set([n1.pk]))
-        # A rule that updates N with the inputs of N
-        self.assertEqual(Rule.get_from_string('N+=n->N').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
-        # A rule that removes N with inputs from N
 
+        # Rule 2: The same with ancestors:
+        # self.assertEqual(to only get the nodes that have input:
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.ASSIGN, projecting_entity=SubSetOfDB(Node),
+                relationship=relationships.LEFTPATH, relationship_entity=Node
+            ).apply(s.copy()).nodes.get_keys(), set([n2.pk]))
+        # Again, trying with string:
+        self.assertEqual(Rule.get_from_string('N=N<<n').apply(s.copy()).nodes.get_keys(), set([n2.pk]))
+
+
+        # A rule that assignes the outputs of N to N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.LEFTLINKED, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n3.pk]))
+        # Again, trying with string:
+        self.assertEqual(Rule.get_from_string('N=n<-N').apply(s.copy()).nodes.get_keys(), set([n3.pk]))
+
+
+        # A rule that assignes the ancestors of N to N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.LEFTPATH, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n3.pk]))
+        # Again, trying with string:
+        self.assertEqual(Rule.get_from_string('N=n<<N').apply(s.copy()).nodes.get_keys(), set([n3.pk]))
+
+
+        # A rule that assignes the inputs of N to N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.RIGHTLINKED, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n1.pk]))
+        # Again, trying with string:
+        self.assertEqual(Rule.get_from_string('N=n->N').apply(s.copy()).nodes.get_keys(), set([n1.pk]))
+
+
+        # A rule that updates N with the inputs of N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.UPDATE, projecting_entity=Node,
+                relationship=relationships.RIGHTLINKED, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
+        # Again, trying with string:
+        self.assertEqual(Rule.get_from_string('N+=n->N').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
+
+
+        # A rule that reassigns N with inputs from N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node), 
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.LINKED, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n1.pk, n3.pk]))
+        # Again, trying with string:
         self.assertEqual(Rule.get_from_string('N=n--N').apply(s.copy()).nodes.get_keys(), set([n1.pk, n3.pk]))
-        # A rule that removes N with inputs from N
+
+
+        # I create a new collection
         s =  AiidaEntitiesCollection()
         s.nodes.add_aiida_types(n1, n2)
+
+        # A rule that removes N with inputs from N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node),
+                operator=operators.REMOVE, projecting_entity=SubSetOfDB(Node),
+                relationship=relationships.LEFTLINKED, relationship_entity=Node
+            ).apply(s.copy()).nodes.get_keys(), set([n1.pk]))
+        # Again, trying with string:
         self.assertEqual(Rule.get_from_string('N-=N<-n').apply(s.copy()).nodes.get_keys(), set([n1.pk]))
+
+        # A rule that assigns N to all descendants of N:
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node),
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.LEFTPATH, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n2.pk, n3.pk]))
+        # Again, trying with string:
         self.assertEqual(Rule.get_from_string('N=n<<N').apply(s.copy()).nodes.get_keys(), set([n2.pk, n3.pk]))
+
+        # A rule that assigns N to all ancestors  of N
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node),
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.RIGHTPATH, relationship_entity=SubSetOfDB(Node)
+            ).apply(s.copy()).nodes.get_keys(), set([n1.pk]))
+        # Again, trying with string:
         self.assertEqual(Rule.get_from_string('N=n>>N').apply(s.copy()).nodes.get_keys(), set([n1.pk]))
 
 
     def test_node_group_relationship(self):
-        from aiida.orm.graph import AiidaEntitiesCollection, Rule
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule, SubSetOfDB, operators, relationships
         from aiida.orm import Node, Group
         n1,n2,n3 = _setup_nodes_simple_1()
         g1 = Group(name='test1').store()
@@ -117,6 +187,11 @@ class TestRule(AiidaTestCase):
         # s now contains g1 as a starting point!
         s.groups.add_aiida_types(g1)
         # This rule asserts whether I can find all the nodes that belong to the groups in the set:
+        self.assertEqual(Rule(set_entity=SubSetOfDB(Node),
+                operator=operators.ASSIGN, projecting_entity=Node,
+                relationship=relationships.LINKED, relationship_entity=SubSetOfDB(Group)
+            ).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
+        # Same with a string:
         self.assertEqual(Rule.get_from_string('N=n--G').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
         # The collection now contains g1 as well as n3
         s.nodes.add_aiida_types(n3)
@@ -300,12 +375,20 @@ class TestRuleSequence(AiidaTestCase):
         s =  AiidaEntitiesCollection()
         s.nodes.add_keys(n1.pk)
         self.assertEqual(RuleSequence(r, niter=1).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
+        self.assertEqual(RuleSequence.get_from_string('(N+=n<N)2').apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk]))
+        
 
         self.assertEqual(RuleSequence(r, niter=2).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
         self.assertEqual(RuleSequence(r, niter=3).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
         self.assertEqual(RuleSequence(r, niter=4).apply(s.copy()).nodes.get_keys(), set([n1.pk, n2.pk, n3.pk]))
 
-#~ @unittest.skipIf(True, '')
+
+    def test_rule_sequence_from_string(self):
+        from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence
+        n1,n2,n3 = _setup_nodes_cycle()
+        r =RuleSequence.get_from_string('(N+=n<N)2')
+
+@unittest.skipIf(True, '')
 class TestStashCommit(AiidaTestCase):
     def test_stash(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence, StashCommit, StashPop
@@ -321,22 +404,19 @@ class TestStashCommit(AiidaTestCase):
 
         self.assertEqual(
             RuleSequence(StashCommit(), rinp, StashPop(), rout).apply(s.copy()).nodes.get_keys(),
-            set([n1.pk, n2.pk, n3.pk])
-        )
+            set([n1.pk, n2.pk, n3.pk]))
         # reversing the rules should lead to the same outcome
         self.assertEqual(
             RuleSequence(StashCommit(), rout, StashPop(), rinp).apply(s.copy()).nodes.get_keys(),
-            set([n1.pk, n2.pk, n3.pk])
-        )
-
+            set([n1.pk, n2.pk, n3.pk]))
         # The outcome is of course different without the stash usage!
         self.assertEqual(
             RuleSequence(rout, rinp).apply(s.copy()).nodes.get_keys(),
             set([n1.pk, n2.pk, n3.pk, n4.pk])
         )
 
+@unittest.skipIf(True, '')
 class TestLinksRules(AiidaTestCase):
-    #~ @unittest.skipIf(True, '')
     def test_links(self):
         from aiida.orm.graph import AiidaEntitiesCollection, Rule, RuleSequence, StashCommit, StashPop
         n1,n2,n3,n4 = _setup_nodes_simple_2()
@@ -352,6 +432,7 @@ class TestLinksRules(AiidaTestCase):
             (n1.pk, n2.pk, u'n1_n2', u'inputlink'),
             (n1.pk, n4.pk, u'n1_n4', u'inputlink'), 
             (n2.pk, n3.pk, u'n2_n3', u'createlink')])
+        #~ print '@@@@@@@@@@@@@@', len(values)
         self.assertEqual(set(values), vshould)
 
         values = RuleSequence(r1,r2, r1).apply(s.copy()).nodes_nodes.values()
@@ -383,6 +464,7 @@ class TestLinksRules(AiidaTestCase):
 
         res = RuleSequence(r1).apply(s.copy())
         self.assertFalse(res.nodes_nodes.values())
+        #~ print res.nodes_groups.values()
         self.assertEqual(set(res.nodes_groups.values()), set([(n2.pk, g2.id)]))
 
         res = RuleSequence(r1, r2).apply(s.copy())

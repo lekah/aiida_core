@@ -2,23 +2,53 @@ import re, copy
 
 
 from aiida.orm.querybuilder import QueryBuilder
-from aiida.orm.node import Node
-from aiida.orm.group import Group
-from aiida.orm.computer import Computer
-from aiida.orm.user import User
+from aiida.orm import (
+    Node, Group, Computer, User, Code, Calculation, Data,
+    CalculationFactory, DataFactory)
+
 from aiida.common.hashing import make_hash
+from aiida.common.extendeddicts import Enumerate
+from frozendict import frozendict
 
 
+# I don't want anything to be hard-coded, so I define all strings that are used in this
+# module here as frozensets or frozendicts
+# The key is always a valid reference, that can be defined by the user
 
-BASE_DEFAULT_DICT = {'n':Node, 'u':User, 'g':Group, 'c':Computer}
+# All the aiida entities I know about will be referenced by the following strings:
+entities = Enumerate(('NODE','GROUP','COMPUTER', 'USER'))
+subentities = Enumerate(( 'DATA', 'CALCULATION', 'CODE'))
+factories = Enumerate(('DATAFACTORY', 'CALCULATIONFACTORY'))
+operators = Enumerate(('UPDATE', 'ASSIGN', 'REMOVE'))
+relationships = Enumerate(('LINKED','LEFTLINKED', 'RIGHTLINKED', 'LEFTPATH', 'RIGHTPATH'))
 
-VALID_RELATIONSHIPS = {'--', '<-', '->', '>>', '<<', '', None}
-VALID_OPERATORS = {'=', '+=', '-=', None}
+OPERATOR_SYMBOLS = frozendict({
+    '+=':operators.UPDATE,
+    '=':operators.ASSIGN,
+    '-=':operators.REMOVE})
 
-NODE2NODE = 'node2node'
-NODE2GROUP = 'node2group'
-NODE2COMPUTER = 'node2computer'
-NODE2USER = 'node2user'
+RELATIONSHIP_SYMBOLS = frozendict({
+    '--':relationships.LINKED,
+    '<-':relationships.LEFTLINKED,
+    '->':relationships.RIGHTLINKED,
+    '<<':relationships.LEFTPATH,
+    '>>':relationships.RIGHTPATH})
+
+ENTITY_ABBREVIATIONS = frozendict({
+    'N':entities.NODE,
+    'G':entities.GROUP,
+    'U':entities.USER,
+    'C':entities.COMPUTER,})
+
+SUBENTITY_ABBREVIATIONS = frozendict({
+    'DA':subentities.DATA,
+    'CA':subentities.CALCULATION,
+    'CO':subentities.CODE,})
+
+
+FACTORY_ABBREVATIONS = frozendict({
+    'DF':factories.DATAFACTORY,
+    'CF':factories.CALCULATIONFACTORY})
 
 class SubSetOfDB(object):
     def __init__(self, aiida_type):
@@ -28,33 +58,52 @@ class SubSetOfDB(object):
         return self._aiida_type
 
 
-def _get_aiida_entity_from_string(specifier):
-    lowspec = specifier.lower()
-    if lowspec == "":
-        return None
-    elif lowspec in BASE_DEFAULT_DICT:
-        aiida_type = BASE_DEFAULT_DICT[lowspec]
-    elif lowspec == 'b':
-        # import and return BandsData!
-        pass
-    else:
-        raise NotImplementedError("<{}>".format(specifier))
-    if specifier.islower():
-        return aiida_type
-    else:
-        return SubSetOfDB(aiida_type)
+ENTITY_MAP = frozendict({
+    entities.NODE:Node,
+    entities.GROUP:Group,
+    entities.USER:User,
+    entities.COMPUTER:Computer,
+    subentities.CALCULATION:Calculation,
+    subentities.DATA:Data,
+    subentities.CODE:Code,
+    factories.DATAFACTORY:DataFactory,
+    factories.CALCULATIONFACTORY:CalculationFactory,
+})
+
+# BASE_DEFAULT_DICT = {'n':Node, 'u':User, 'g':Group, 'c':Computer}
+
+#~ VALID_RELATIONSHIPS = {'--', '<-', '->', '>>', '<<', '', None}
+#~ VALID_OPERATORS = {'=', '+=', '-=', None}
+
+NODE2NODE = 'node2node'
+NODE2GROUP = 'node2group'
+NODE2COMPUTER = 'node2computer'
+NODE2USER = 'node2user'
+
+
 
 def _get_relationship(specifier):
     # TODO: More specs for specifying link types as -oi-
-    if specifier not in VALID_RELATIONSHIPS:
-        raise ValueError("|{}| is not a valid relationship\nValid specifiers are: {}".format(specifier, VALID_RELATIONSHIPS))
-    return specifier
+    if specifier == "":
+        return None
+    elif specifier in relationships:
+        return specifier
+    elif specifier in RELATIONSHIP_SYMBOLS:
+        return RELATIONSHIP_SYMBOLS[specifier]
+    else:
+        raise ValueError("|{}| is not a valid relationship\nValid specifiers are: {}"
+        "".format(specifier, list(relationships)+RELATIONSHIP_SYMBOLS.keys()))
 
 def _get_operator(specifier):
     # TODO: More specs for specifying link types as -oi-
-    if specifier not in VALID_OPERATORS:
-        raise ValueError("{} is not a valid operator".format(specifier))
-    return specifier
+    if specifier == "":
+        return None
+    elif specifier in operators:
+        return specifier
+    elif specifier in OPERATOR_SYMBOLS:
+        return OPERATOR_SYMBOLS[specifier]
+    else:
+        raise ValueError("|{}| is not a valid relationship\nValid specifiers are: {}".format(specifier, VALID_RELATIONSHIPS))
 
 
 RULE_REGEX = re.compile("""
@@ -84,15 +133,35 @@ class Rule(object):
         """
 
         """
+        def _get_entity_from_string(specifier):
+            upspec = specifier.upper()
+            # If nothing was defined:
+            if upspec == "":
+                return None
+            if upspec in ENTITY_ABBREVIATIONS.keys():
+                aiida_type = ENTITY_MAP[ENTITY_ABBREVIATIONS[upspec]]
+            elif upspec in SUBENTITY_ABBREVIATIONS.keys():
+                aiida_type = ENTITY_MAP[SUBENTITY_ABBREVIATIONS[upspec]]
+            elif upspec in ENTITY_MAP:
+                aiida_type = ENTITY_MAP[upspec]
+            else:
+                raise NotImplementedError("<{}>".format(specifier))
+
+            # Now, if something was provided with lowercase symbols:
+            if specifier.islower():
+                return aiida_type
+            else:
+                return SubSetOfDB(aiida_type)
+
         match = RULE_REGEX.search(string)
         if match is None:
             raise ValueError("{} is not a valid rule string".format(string))
         return cls(
-            set_entity=_get_aiida_entity_from_string(match.group('set_entity')),
+            set_entity=_get_entity_from_string(match.group('set_entity')),
             operator=_get_operator(match.group('operator')),
-            projecting_entity=_get_aiida_entity_from_string(match.group('projecting_entity')),
+            projecting_entity=_get_entity_from_string(match.group('projecting_entity')),
             relationship=_get_relationship(match.group('relationship')),
-            relationship_entity=_get_aiida_entity_from_string(match.group('relationship_entity')),
+            relationship_entity=_get_entity_from_string(match.group('relationship_entity')),
             string=string
         )
 
@@ -119,7 +188,7 @@ class Rule(object):
         """
         :returns: A boolean, whether the Rule is an UpdateRule. This allows for tricks in the RuleSequence!
         """
-        return self._operator.startswith('+')
+        return self._operator == operators.UPDATE
 
     def set_link_tracking(self, link_tracking):
         self._link_tracking = link_tracking
@@ -137,7 +206,6 @@ class Rule(object):
         """
         N = N <- n
         """
-
         def get_entity_n_filters(entity, entities_collection, additional_filters):
             """
             TODO Docstring, and move out of here!
@@ -189,7 +257,8 @@ class Rule(object):
 
         # Ok, here I need to make some strategic decisions
         # 1) Am I tracking links?
-        tracking = self._link_tracking
+        tracking = self._link_tracking, isinstance(self._relationship_entity, SubSetOfDB)
+        #~ print 0, tracking,  self._relationship
         # 2) Can I actually track links or is this futile here?
         # 2a) Am I querying a relationship
         if tracking:
@@ -203,9 +272,9 @@ class Rule(object):
             # relationships!
             #~ elif isinstance(self._projecting_entity, SubSetOfDB):
                 #~ tracking = False
-            elif not self._operator.startswith('+'):
+            elif self._operator != operators.UPDATE:
                 tracking = False
-            elif '-' not in self._relationship:
+            elif self._relationship not in (relationships.LINKED, relationships.LEFTLINKED, relationships.RIGHTLINKED):
                 # I can't deal with 
                 tracking = False
             else:
@@ -222,13 +291,19 @@ class Rule(object):
         qb_right = [QueryBuilder(**self._qb_kwargs)]
         proj_entity, proj_filters, proj_project = get_entity_n_filters(self._projecting_entity, entities_collection, self._projection_filters)
         qb_right[0].append(proj_entity, filters=proj_filters, project=proj_project, tag='p')
+        #~ print
+        #~ print 1,proj_entity
+        #~ print 2,proj_filters
+        #~ print 3,proj_project
         if self._relationship:
             if not self._relationship_entity:
                 raise Exception() # should be before, no?
 
             rlshp_entity, rlshp_filters, rlshp_project = get_entity_n_filters(
                     self._relationship_entity, entities_collection, self._relationship_filters)
-
+            #~ print 4,rlshp_entity
+            #~ print 5,rlshp_filters
+            #~ print 6,rlshp_project
             if tracking:
                 rlshp_project, edge_project = get_relation_projections(
                         entities_collection, proj_entity, rlshp_entity, self._relationship)
@@ -241,22 +316,22 @@ class Rule(object):
             if issubclass(proj_entity, Node):
                 if issubclass(rlshp_entity, Node):
                     edge_name = NODE2NODE
-                    if self._relationship == '<-':
+                    if self._relationship == relationships.LEFTLINKED:
                         qb_right[0].append(rlshp_entity, input_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((1,0,2,3))
                             edge_identifiers.append(4)
-                    elif self._relationship == '->':
+                    elif self._relationship == relationships.RIGHTLINKED:
                         qb_right[0].append(rlshp_entity, output_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((0,1,2,3))
                             edge_identifiers.append(4)
-                    elif self._relationship == '>>':
+                    elif self._relationship == relationships.RIGHTPATH:
                         qb_right[0].append(rlshp_entity, descendant_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
-                    elif self._relationship == '<<':
+                    elif self._relationship == relationships.LEFTPATH:
                         qb_right[0].append(rlshp_entity, ancestor_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
-                    elif self._relationship == '--':
-                        # A bit of QueryBuilder magic
+                    elif self._relationship == relationships.LINKED:
+
                         qb_right.append(qb_right[0].copy())
                         qb_right[0].append(rlshp_entity, output_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         qb_right[1].append(rlshp_entity, input_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
@@ -269,7 +344,7 @@ class Rule(object):
                         raise NotImplementedError
                 elif issubclass(rlshp_entity, Group):
                     edge_name = NODE2GROUP
-                    if self._relationship == '--':
+                    if self._relationship == relationships.LINKED:
                         qb_right[0].append(rlshp_entity, group_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((0,1))
@@ -279,7 +354,7 @@ class Rule(object):
 
                 elif issubclass(rlshp_entity, User):
                     edge_name = NODE2USER
-                    if self._relationship == '--':
+                    if self._relationship == relationships.LINKED:
                         qb_right[0].append(rlshp_entity, creator_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((0,1))
@@ -288,7 +363,7 @@ class Rule(object):
                         raise NotImplementedError
                 elif issubclass(rlshp_entity, Computer):
                     edge_name = NODE2COMPUTER
-                    if self._relationship == '--':
+                    if self._relationship == relationships.LINKED:
                         qb_right[0].append(rlshp_entity, computer_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((0,1))
@@ -300,18 +375,21 @@ class Rule(object):
             elif issubclass(proj_entity, Group):
                 edge_name = NODE2GROUP
                 if issubclass(rlshp_entity, Node):
-                    if self._relationship == '--':
-                        qb_right[0].append(rlshp_entity, member_of='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
+                    #~ print 'HERE'
+                    if self._relationship == relationships.LINKED:
+                        qb_right[0].append(rlshp_entity,
+                                member_of='p', filters=rlshp_filters,
+                                project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((1,0))
                             edge_identifiers.append(None)
                     else:
                         raise NotImplementedError
-
+                    #~ print 6, qb_right[0].count()
             elif issubclass(proj_entity, User):
                 edge_name = NODE2USER
                 if issubclass(rlshp_entity, Node):
-                    if self._relationship == '--':
+                    if self._relationship == relationships.LINKED:
                         qb_right[0].append(rlshp_entity, created_by='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((1,0))
@@ -322,7 +400,7 @@ class Rule(object):
             elif issubclass(proj_entity, Computer):
                 edge_name = NODE2COMPUTER
                 if issubclass(rlshp_entity, Node):
-                    if self._relationship == '--':
+                    if self._relationship == relationships.LINKED:
                         qb_right[0].append(rlshp_entity, has_computer='p', filters=rlshp_filters, project=rlshp_project, edge_project=edge_project)
                         if tracking:
                             orders.append((1,0))
@@ -332,6 +410,7 @@ class Rule(object):
             else:
                 raise NotImplementedError
 
+        #~ print 7, tracking
         if tracking:
             #~ projection_key, = proj_project
             #~ res = [qb.dict() for qb in qb_right]
@@ -340,18 +419,17 @@ class Rule(object):
             #~ qb_right_result = set([row  ['p'][projection_key] for subres in res for row in subres])
             res = [qb.all() for qb in qb_right]
             qb_right_result = [_[0] for  subres in res for _ in subres]
-            pass
         else:
             qb_right_result = set([_ for qb in qb_right for _, in qb.iterall()])
-            
-        if self._operator == '=':
+        #~ print 8, qb_right_result, self._operator
+        if self._operator == operators.ASSIGN:
             #~ print entities_collection[set_entity].set
             #~ print qb_right.all()
             entities_collection[set_entity]._set_key_set_nocheck(qb_right_result)
 
-        elif self._operator == '+=':
+        elif self._operator == operators.UPDATE:
             entities_collection[set_entity]._set_key_set_nocheck(entities_collection[set_entity]._set.union(qb_right_result))
-            # Here I'm adding the links!!
+            #~ print 9, entities_collection[set_entity]._set
             if tracking:
                 for o, subres,identifier in zip(orders, res, edge_identifiers):
                     for row in subres:
@@ -362,8 +440,10 @@ class Rule(object):
                         #~ print edge_id
                         entities_collection[edge_name]._add_link_dict_no_check({edge_id:tuple(row[i] for i in o)})
 
-        elif self._operator == '-=':
+        elif self._operator == operators.REMOVE:
             entities_collection[set_entity]._set_key_set_nocheck(entities_collection[set_entity]._set.difference(qb_right_result))
+        else:
+            raise Exception("Unknown operator <{}>".format(self._operator))
         return entities_collection
 
 
@@ -378,7 +458,20 @@ class RuleSequence(object):
 
     @classmethod
     def get_from_string(cls, string):
-        pass
+        subrules = []
+        
+        # The first thing I do is 
+        # First I check if this is a valid Rule
+        for 
+        match = RULE_REGEX.search(string)
+        # If this is a match, I have a simple rule:
+        if match:
+            return cls(Rule.get_from_string(string))
+        else:
+            # I try to recursively identify
+
+        for match in RULE_REGEX.finditer(string):
+            print match.group(0)
 
     def __init__(self, *rules, **kwargs):
         """
@@ -633,10 +726,6 @@ class AiidaLinkCollection(object):
 
     def __sub__(self, other):
         raise NotImplementedError
-        new = self.__class__()
-        new_links = copy.copy(self.links)
-        new._add_link_dict_no_check({k:v for k,v in new_links.items() if k not in other.links})
-        return new
 
     def __isub__(self, other):
 
