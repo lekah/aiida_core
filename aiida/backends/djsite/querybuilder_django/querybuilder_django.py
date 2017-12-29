@@ -241,10 +241,13 @@ class QueryBuilderImplDjango(QueryBuilderInterface):
                 raise InputValidationError(
                         '{}  contains more than one type'.format(value)
                     )
-            elif len(value_type_set) == 0:
-                raise InputValidationError(
-                        '{}  contains is an empty list'.format(value)
-                    )
+            # Leonid: Removed check because it proved to give cumbersome errors that are hard to understand
+            # Overall it's a useless check, since the backend does the right thing if an empty list
+            # is passed
+            # elif len(value_type_set) == 0:
+            #    raise InputValidationError(
+            #            '{}  contains is an empty list'.format(value)
+            #        )
         elif operator in ('and', 'or'):
             expressions_for_this_path = []
             for filter_operation_dict in value:

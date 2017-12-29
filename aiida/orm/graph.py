@@ -1,4 +1,4 @@
-import re, copy
+import re, copy, collections
 
 
 from aiida.orm.querybuilder import QueryBuilder
@@ -611,15 +611,18 @@ class RuleSequence(object):
         # NOTE: not the same as visited if we have stash commits/push
         dealt_with_collection = collection.copy()
 
-        #~ new_collection = operational_collection.copy()
-        #~ visited_collection =
+
         while True:
+            #~ print 1, collection.nodes.get_keys()
+
             if iterations == self._niter:
                 break
             if not operational_collection:
                 break
             #~ operational_collection = new_collection.copy()
             for item in self._rules:
+                #~ print '#1', operational_collection.nodes.get_keys()
+                #~ print 2, item
                 if isinstance(item, (Operation, RuleSequence)):
                     # I change the operational collection in place!
                     operational_collection = item.apply(operational_collection)
@@ -627,16 +630,19 @@ class RuleSequence(object):
                     operational_collection = item.apply(operational_collection, self._stash)
                 else:
                     assert(True, "Should not get here")
+                #~ print 3
                 # I update here.
                 # TODO: Tricks with checking whether Stashe etc to avoid number of updates?
                 visited_collection += operational_collection
+                #~ print 'H:', item
+                #~ print '#2', operational_collection.nodes.get_keys()
                 #~ print operational_collection.nodes._set
+
             # Now I update the visited collection which is the collection I keep track of:
             # So, what here is actually new?
             #~ operational_collection = operational_collection - visited_collection
             operational_collection -= dealt_with_collection
             dealt_with_collection = dealt_with_collection + operational_collection
-
             iterations += 1
         self._last_niter = iterations
         return visited_collection
@@ -973,11 +979,14 @@ class GraphExplorer(object):
         self._recipe = recipe
     def explore(self):
         RuleSequence.get_from_string(self._recipe).apply(self._entities_collection)
-        print self._entities_collection.nodes._set
+        #~ print self._entities_collection.nodes._set
 
 
     def draw(self):
-        draw_graph(self._entities_collection, format='pdf', filename='temp')
+        draw_graph(self._entities_collection, 
+                format='pdf',
+                #~ format='dot',
+                filename='temp')
 
 def draw_graph(entities_collection, origin_node=None, format='dot', filename=None):
     import os, tempfile
@@ -1010,8 +1019,13 @@ def draw_graph(entities_collection, origin_node=None, format='dot', filename=Non
             label_string = "\n'{}'".format(node.label)
             additional_string = ""
         else:
-            additional_string = "\n {}".format(node.get_desc())
             label_string = ""
+            descr = node.get_desc()
+            if descr:
+                additional_string = "\n {}".format(node.get_desc())
+            else:
+                additional_string = ''
+            
         labelstring = 'label="{} ({}){}{}"'.format(
             node.__class__.__name__, node.pk, label_string,
             additional_string)
@@ -1033,7 +1047,12 @@ def draw_graph(entities_collection, origin_node=None, format='dot', filename=Non
             color="0.0 0.0 0.5" #grey lines for unspecified links!
         return '    {} -> {} [label="{}", color="{}", style="{}"];'.format("N{}".format(inp_id),  "N{}".format(out_id), link_label, color, style)
     # Writing the graph to a temporary file
-
+    def draw_group_settings(group, connected_nodes_pks):
+        return ('subgraph cluster_{} {{\n'
+            '{};\n'
+            'label="{}";\n'
+            'color=blue;\n'
+            '}}\n').format(group.pk, ' '.join(['"N{}"'.format(pk) for pk in connected_nodes_pks]), group.name)
 
 
     #~ fd, fname = tempfile.mkstemp(suffix='.dot')
@@ -1041,12 +1060,33 @@ def draw_graph(entities_collection, origin_node=None, format='dot', filename=Non
     #~ links[link_id] = draw_link_settings(inp.pk, node.pk, link_label, link_type)
     nodes = {}
     links = {}
+    groups = {}
 
-    for node_identifier in entities_collection.nodes.get_keys():
-        nodes[node_identifier] = draw_node_settings(load_node(node_identifier))
+    #~ print entities_collection.nodes.identifier
+
+    for node, in QueryBuilder().append(Node, filters={
+            entities_collection.nodes.identifier:{'in':entities_collection.nodes.get_keys()}}).iterall():
+        nodes[node.id] = draw_node_settings(node)
     for link_key, link_vals in entities_collection.nodes_nodes.items():
         links[link_key] = draw_link_settings(*link_vals)
-        #~ print link_values
+
+    group_connections = collections.defaultdict(list)
+    taken_nodes = set()
+    for node_id, group_id in entities_collection.nodes_groups.values():
+        if node_id in taken_nodes:
+            raise Exception("Unfortunately, graphviz cannot visualize overlapping containers"
+                "The node with pk={} seems to belong to several groups".format(node_id))
+        taken_nodes.add(node_id)
+        group_connections[group_id].append(node_id)
+        # Graphviz cannot visualize overlapping containers
+        
+    for group, in QueryBuilder().append(Group, filters={
+            entities_collection.groups.identifier:{'in':entities_collection.groups.get_keys()}}).iterall():
+        if group.pk not in group_connections:
+            # This group is not connected to any nodes
+            continue
+        groups[group.pk] = draw_group_settings(group, group_connections[group.pk])
+
 
     if isinstance(origin_node, (int,basestring)):
         # assuming this is a valid key:
@@ -1056,15 +1096,24 @@ def draw_graph(entities_collection, origin_node=None, format='dot', filename=Non
         nodes[origin_node.pk] = draw_node_settings(origin_node, style='filled', color='lightblue')
     with open(fname, 'w') as fout:
         fout.write("digraph G {\n")
+        #~ print "digraph G {"
+        for _, groupspec in groups.iteritems():
+            #~ print groupspec
+            #~ fout.write('    ')
+            fout.write(groupspec)
         for l_name, l_values in links.iteritems():
             fout.write('    {}\n'.format(l_values))
+            #~ print l_values
         for n_name, n_values in nodes.iteritems():
             fout.write("    {}\n".format(n_values))
+            #~ print n_values
         #~ for n_name, n_values in additional_nodes.iteritems():
             #~ fout.write("    {}\n".format(n_values))
         fout.write("}\n")
+        #~ print '}'
 
     # Now I am producing the output file
+
 
     output_file_name = "{0}.{format}".format(filename or origin_node.pk, format=format)
     exit_status = os.system('dot -T{format} {0} -o {1}'.format(fname, output_file_name, format=format))
