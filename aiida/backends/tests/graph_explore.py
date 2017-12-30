@@ -456,8 +456,8 @@ class TestStashCommit(AiidaTestCase):
             set([n1.pk, n2.pk, n3.pk, n4.pk])
         )
         self.assertEqual(
-            RuleSequence(RuleSequence.get_from_string('{} {}'.format(rinps, routs))).apply(s.copy()).nodes.get_keys(),
-            set([n1.pk, n2.pk, n3.pk]))
+            RuleSequence(RuleSequence.get_from_string('{} {}'.format(routs, rinps))).apply(s.copy()).nodes.get_keys(),
+            set([n1.pk, n2.pk, n3.pk, n4.pk]))
 
 
 #~ @unittest.skipIf(True, '')
