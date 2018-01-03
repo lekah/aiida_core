@@ -300,6 +300,13 @@ class TestRule(AiidaTestCase):
 #~ @unittest.skipIf(True, '')
 class TestRuleSequence(AiidaTestCase):
 
+    def test_string(self):
+        from aiida.orm.graph import InvalidRule, RuleSequence
+        for rs in ("",  ")", "()", "N+=N--n)", "N-=N-n", "N+=N--n ] N+=N--n"):
+            with self.assertRaises(InvalidRule):
+                RuleSequence.get_from_string(rs)
+            
+            
     def test_rule_sequence_simple(self):
         from aiida.orm.graph import SubGraph, Operation, RuleSequence
         n1,n2,n3, n4 = _setup_nodes_simple_2()

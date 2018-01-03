@@ -98,6 +98,7 @@ class DatabaseWorld(EntityWorld):
 class InvalidRule(Exception):
     pass
 
+
 SetOfNodes = CollectedWorld(Node)
 SetOfGroups = CollectedWorld(Group)
 SetOfComputers = CollectedWorld(Computer)
@@ -758,7 +759,7 @@ class RuleSequence(Rule):
     """
 
     @classmethod
-    def get_from_string(cls, rule_spec):
+    def get_from_string_old(cls, rule_spec):
         """
         Get a RuleSequence from the specification
         """
@@ -846,6 +847,83 @@ class RuleSequence(Rule):
         except StopIteration:
             if news:
                 rules.append(Operation.get_from_string(news))
+        return RuleSequence(*rules)
+
+    @classmethod
+    def get_from_string(cls, rule_spec, recursion_depth=0):
+        """
+        Get a RuleSequence from the specification
+        """
+        rules = [] # Saving the rules here
+        escaping = False # In case special characters (][ etc) are kept, escape them with \
+        commits_to_stash_counter = 0 # I count how many times I commit to stash, and how many times I pop
+        operation_spec = "" 
+        iterable_rule_spec = iter(rule_spec)
+        try:
+            while True:
+                new_character = iterable_rule_spec.next()
+                if escaping: # If escaping, just add the character to the spec
+                    operation_spec += new_character
+                    escaping = False # Escaping only one character, so escaping is now set to False
+                elif new_character == '\\': # This is the escaping character: \
+                    operation_spec += new_character # Still being added, the final cleaning is done in Operation.get_from_string!
+                    escaping = True 
+                elif new_character in ' []()':
+                    if operation_spec:
+                        # These special charactes mark the end of an operation specfication
+                        rules.append(Operation.get_from_string(operation_spec))
+                        operation_spec = "" # Starting new spec
+                    if new_character == ' ':
+                        pass # Ignoring additional spaces
+                    elif new_character == '[':
+                        rules.append(StashCommit())
+                        commits_to_stash_counter += 1
+                    elif new_character == ']':
+                        if commits_to_stash_counter == 0:
+                            raise InvalidRule("You're popping more times from stash than you commit")
+                        rules.append(StashPop())
+                        commits_to_stash_counter -= 1
+                    elif new_character == '(':
+                        # If a bracket is opened, I start a new rule_sequence
+                        new_rule_sequence = RuleSequence.get_from_string(
+                                iterable_rule_spec, recursion_depth=recursion_depth+1)
+                        # It will return when this specific bracket is closed.
+                        # Right after, there can be (not necessarili a specification for the
+                        # number of iterations
+                        try:
+                            numspec = ''
+                            while True:
+                                new_character = iterable_rule_spec.next()
+                                if new_character in '0123456789':
+                                    numspec += new_character
+                                elif new_character == '*':
+                                    numspec = '*'
+                                    raise StopIteration
+                                else:
+                                    raise StopIteration
+                        except StopIteration:
+                            if numspec == '*':
+                                niter = -1
+                            elif numspec:
+                                niter = int(numspec)
+                            else:
+                                niter = 1
+                        #~ print "adding", rs, "with niter={}".format(niter)
+                        new_rule_sequence.set_niter(niter)
+                        rules.append(new_rule_sequence)
+                        operation_spec = ""
+                    elif new_character == ')':
+                        if recursion_depth == 0:
+                            raise InvalidRule("Closing a bracket that was not opened")
+                        else:
+                            break
+                else:
+                    operation_spec += new_character
+        except StopIteration:
+            if operation_spec:
+                rules.append(Operation.get_from_string(operation_spec))
+        if not len(rules):
+            raise InvalidRule("Empty rule")
         return RuleSequence(*rules)
 
     def __str__(self):
