@@ -156,7 +156,8 @@ class SlurmScheduler(aiida.scheduler.Scheduler):
 
     # Query only by list of jobs and not by user
     _features = {
-        'can_query_by_user': False,
+        #~ 'can_query_by_user': False, 
+        'can_query_by_user': True, # For problem with slurm on DAINT, triggers query by user instead specific job-ids!
         }
     
     # The class to be used for the job resource.

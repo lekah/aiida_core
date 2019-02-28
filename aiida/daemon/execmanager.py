@@ -50,7 +50,7 @@ def update_running_calcs_status(authinfo):
     calcs_to_inquire = qmanager.query_jobcalculations_by_computer_user_state(
         state=calc_states.WITHSCHEDULER,
         computer=authinfo.dbcomputer,
-        user=authinfo.aiidauser
+        user=authinfo.aiidauser,
     )
 
     #~ calcs_to_inquire = list(JobCalculation._get_all_with_state(
@@ -83,13 +83,12 @@ def update_running_calcs_status(authinfo):
             # sensible (at least, skip this computer but continue with
             # following ones, and set a counter; set calculations to
             # UNKNOWN after a while?
-            if s.get_feature('can_query_by_user'):
+            if s.get_feature('can_query_by_user'): # I hardcoded to True in slurm plugin:
                 found_jobs = s.getJobs(user="$USER", as_dict=True)
             else:
                 found_jobs = s.getJobs(jobs=jobids_to_inquire, as_dict=True)
 
             # I update the status of jobs
-
             for c in calcs_to_inquire:
                 try:
                     logger_extra = get_dblogger_extra(c)
@@ -239,7 +238,7 @@ def update_jobs():
     computers_users_to_check = qmanager.query_jobcalculations_by_computer_user_state(
             state=calc_states.WITHSCHEDULER,
             only_computer_user_pairs=True,
-            only_enabled=True
+            only_enabled=True,
         )
 
     for computer, aiidauser in computers_users_to_check:
@@ -691,9 +690,9 @@ def retrieve_computed_for_authinfo(authinfo):
         # Open connection
         with authinfo.get_transport() as t:
             for calc in calcs_to_retrieve:
+                print 'retrieving', calc
                 logger_extra = get_dblogger_extra(calc)
                 t._set_logger_extra(logger_extra)
-
                 try:
                     calc._set_state(calc_states.RETRIEVING)
                 except ModificationNotAllowed:

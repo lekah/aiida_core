@@ -66,7 +66,6 @@ class QueryManagerDjango(AbstractQueryManager):
         if only_enabled:
             kwargs['dbcomputer__enabled'] = True
 
-
         queryresults = JobCalculation.query(
             dbattributes__key='state',
             dbattributes__tval=state,
