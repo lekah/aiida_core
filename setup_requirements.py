@@ -40,7 +40,7 @@ install_requires = [
     'anyjson==0.3.3',
     'psutil==5.4.0',
     'meld3==1.0.0',
-    'numpy==1.12.0',
+    'numpy>=1.12.0',
     'plumpy==0.7.10',
     'portalocker==1.1.0',
     'SQLAlchemy==1.0.12',  # upgrade to SQLalchemy 1.1.5 does break tests, see #465
@@ -66,7 +66,7 @@ install_requires = [
     # Requirements for verdi shell (version of ipython non enforced, because
     # there are people who still prefer version 4 rather than the latest)
     'ipython<6.0',
-    'scipy<1.0.0'  # At this moment the install of 1.0.0 release is broken
+    'scipy'  # At this moment the install of 1.0.0 release is broken
 ]
 
 extras_require = {
@@ -111,7 +111,7 @@ extras_require = {
         # support for symmetry detection in aiida.orm.data.structure. Has no
         # easily accessible version number
         'pymatgen==4.5.3',  # support for NWChem I/O
-        'ase==3.12.0',  # support for crystal structure manipulation
+        'ase>=3.12.0',  # support for crystal structure manipulation
         'PyMySQL==0.7.9',  # required by ICSD tools
         'PyCifRW==3.6.2.1',
         'seekpath==1.8.0',
