@@ -111,7 +111,7 @@ extras_require = {
         # support for symmetry detection in aiida.orm.data.structure. Has no
         # easily accessible version number
         'pymatgen==4.5.3',  # support for NWChem I/O
-        'ase>=3.12.0',  # support for crystal structure manipulation
+        'ase==3.17.0',  # support for crystal structure manipulation
         'PyMySQL==0.7.9',  # required by ICSD tools
         'PyCifRW==3.6.2.1',
         'seekpath==1.8.0',
